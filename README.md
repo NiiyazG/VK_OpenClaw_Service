@@ -18,6 +18,13 @@ The service receives VK messages, runs OpenClaw commands, sends results back to 
 ## Quick Start / Быстрый старт
 Detailed platform commands are in `docs/install.md`.
 
+Clone repository / Клонировать репозиторий:
+```bash
+git clone https://github.com/NiiyazG/VK_OpenClaw_Service.git
+cd VK_OpenClaw_Service
+ls pyproject.toml
+```
+
 Linux (bash):
 ```bash
 sudo apt update
@@ -28,7 +35,6 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e .
 cp .env.example .env
 uvicorn vk_openclaw_service.main:app --reload
-
 ```
 
 Windows (PowerShell):
@@ -45,7 +51,6 @@ Run worker / Запуск воркера:
 ```bash
 vk-openclaw-worker --once
 ```
-
 ## Configuration / Конфигурация
 Required runtime variables (minimum):
 - `ADMIN_API_TOKEN`
