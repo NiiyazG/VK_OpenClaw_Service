@@ -20,12 +20,15 @@ Detailed platform commands are in `docs/install.md`.
 
 Linux (bash):
 ```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+python3 -m pip install --upgrade pip
+python3 -m pip install -e .
 cp .env.example .env
 uvicorn vk_openclaw_service.main:app --reload
+
 ```
 
 Windows (PowerShell):
