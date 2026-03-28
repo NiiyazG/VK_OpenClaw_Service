@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vk-openclaw-service"
+version = "0.0.1"
+description = "VK Messenger to OpenClaw service"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Гарипов Нияз Варисович", email = "garipovn@yandex.ru" }]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi>=0.135.1,<0.136",
+    "httpx>=0.28,<0.29",
+    "uvicorn>=0.35,<0.36",
+]
+
+[project.scripts]
+vk-openclaw = "vk_openclaw_service.cli:main"
+vk-openclaw-worker = "vk_openclaw_service.worker_main:main"
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0,<7",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+
