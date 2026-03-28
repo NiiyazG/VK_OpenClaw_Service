@@ -1,13 +1,13 @@
 # vk-openclaw-service
 
-## What is it / Что это
+## What is it / Р§С‚Рѕ СЌС‚Рѕ
 `vk-openclaw-service` is an open-source bridge between VK Messenger and OpenClaw.
 The service receives VK messages, runs OpenClaw commands, sends results back to VK, and exposes admin API endpoints for health and audit.
 
-`vk-openclaw-service` - это open-source мост между VK Messenger и OpenClaw.
-Сервис принимает сообщения из VK, запускает команды OpenClaw, отправляет ответ обратно в VK и предоставляет admin API для статуса и аудита.
+`vk-openclaw-service` - СЌС‚Рѕ open-source РјРѕСЃС‚ РјРµР¶РґСѓ VK Messenger Рё OpenClaw.
+РЎРµСЂРІРёСЃ РїСЂРёРЅРёРјР°РµС‚ СЃРѕРѕР±С‰РµРЅРёСЏ РёР· VK, Р·Р°РїСѓСЃРєР°РµС‚ РєРѕРјР°РЅРґС‹ OpenClaw, РѕС‚РїСЂР°РІР»СЏРµС‚ РѕС‚РІРµС‚ РѕР±СЂР°С‚РЅРѕ РІ VK Рё РїСЂРµРґРѕСЃС‚Р°РІР»СЏРµС‚ admin API РґР»СЏ СЃС‚Р°С‚СѓСЃР° Рё Р°СѓРґРёС‚Р°.
 
-## Features / Возможности
+## Features / Р’РѕР·РјРѕР¶РЅРѕСЃС‚Рё
 - VK polling worker with controlled retries and backoff.
 - Pairing and allowlist flow for safer peer access.
 - Config validation endpoint before runtime rollout.
@@ -15,7 +15,7 @@ The service receives VK messages, runs OpenClaw commands, sends results back to 
 - Optional PostgreSQL + Redis runtime mode.
 - CLI installer flow for WSL (`vk-openclaw install`).
 
-## Quick Start / Быстрый старт
+## Quick Start / Р‘С‹СЃС‚СЂС‹Р№ СЃС‚Р°СЂС‚
 Detailed platform commands are in `docs/install.md`.
 
 Linux (bash):
@@ -38,12 +38,12 @@ Copy-Item .env.example .env
 uvicorn vk_openclaw_service.main:app --reload
 ```
 
-Run worker / Запуск воркера:
+Run worker / Р—Р°РїСѓСЃРє РІРѕСЂРєРµСЂР°:
 ```bash
 vk-openclaw-worker --once
 ```
 
-## Configuration / Конфигурация
+## Configuration / РљРѕРЅС„РёРіСѓСЂР°С†РёСЏ
 Required runtime variables (minimum):
 - `ADMIN_API_TOKEN`
 - `VK_ACCESS_TOKEN`
@@ -52,11 +52,11 @@ Required runtime variables (minimum):
 
 Use placeholders from `.env.example` and keep real values only in local `.env` / `.env.local`.
 
-## VK Setup / Настройка VK
+## VK Setup / РќР°СЃС‚СЂРѕР№РєР° VK
 Step-by-step token and `peer_id` setup:
 - `docs/vk_setup.md`
 
-## Security / Безопасность
+## Security / Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ
 Never commit:
 - `.env` files
 - tokens and passwords
@@ -66,13 +66,13 @@ Never commit:
 Public repository safety checklist:
 - `docs/public_repo_open.md`
 
-## Documentation map / Карта документации
+## Documentation map / РљР°СЂС‚Р° РґРѕРєСѓРјРµРЅС‚Р°С†РёРё
 - Architecture: `docs/architecture.md`
 - Operations runbook: `docs/operations_runbook.md`
 - Contributor guide: `CONTRIBUTING.md`
 - Installation guide: `docs/install.md`
 
-## Author & License / Автор и лицензия
-- Author: Гарипов Нияз Варисович
+## Author & License / РђРІС‚РѕСЂ Рё Р»РёС†РµРЅР·РёСЏ
+- Author: Р“Р°СЂРёРїРѕРІ РќРёСЏР· Р’Р°СЂРёСЃРѕРІРёС‡
 - Email: garipovn@yandex.ru
 - License: MIT (`LICENSE`)
