@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 SYSTEMD_UNIT_API = "vk-openclaw-api.service"
 SYSTEMD_UNIT_WORKER = "vk-openclaw-worker.service"
 WINDOWS_SERVICE_ID = "vk-openclaw-service"
+DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL_ENV = "VK_OPENCLAW_API_BASE_URL"
 AUTHOR_INFO_LINES = [
     "Author: Гарипов Нияз Варисович февраль 2026",
     "- Email: garipovn@yandex.ru",
@@ -725,13 +727,12 @@ def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
         )
         return
 
-    base_url = input(
-        _bi(
-            platform_name,
-            "Базовый URL API [http://127.0.0.1:8000]: ",
-            "API base URL [http://127.0.0.1:8000]: ",
-        )
-    ).strip() or "http://127.0.0.1:8000"
+    base_url = os.environ.get(API_BASE_URL_ENV, DEFAULT_LOCAL_API_BASE_URL).strip() or DEFAULT_LOCAL_API_BASE_URL
+    _print_bi(
+        platform_name,
+        f"Используем API URL: {base_url} (override: {API_BASE_URL_ENV})",
+        f"Using API URL: {base_url} (override: {API_BASE_URL_ENV})",
+    )
     code_url = f"{base_url.rstrip('/')}/api/v1/pairing/code"
     peers_url = f"{base_url.rstrip('/')}/api/v1/pairing/peers"
     status_url = f"{base_url.rstrip('/')}/api/v1/status"

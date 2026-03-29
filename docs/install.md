@@ -80,6 +80,7 @@ Interactive setup offers pairing helper:
 - tells user to run `/pair <code>` in VK
 - waits until peer appears in `/api/v1/pairing/peers`
 - suggests `/status` and `/ask`
+- uses `http://127.0.0.1:8000` by default; override with `VK_OPENCLAW_API_BASE_URL`
 
 ## Troubleshooting
 1. Invalid VK token:

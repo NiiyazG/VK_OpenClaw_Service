@@ -31,6 +31,23 @@ chmod +x ./install.sh
 ./install.sh
 ```
 
+If first setup failed (clean reinstall, Linux):
+```bash
+systemctl --user stop vk-openclaw-api.service vk-openclaw-worker.service 2>/dev/null || true
+cd ~
+rm -rf ~/VK_OpenClaw_Service
+git clone https://github.com/NiiyazG/VK_OpenClaw_Service.git
+cd ~/VK_OpenClaw_Service
+chmod +x ./install.sh
+./install.sh
+```
+
+After reinstall (important):
+```bash
+systemctl --user restart vk-openclaw-api.service vk-openclaw-worker.service
+vk-openclaw status
+```
+
 Interactive setup now auto-selects:
 - `PERSISTENCE_MODE=file`
 - `OPENCLAW_COMMAND` from local wrapper or `openclaw`

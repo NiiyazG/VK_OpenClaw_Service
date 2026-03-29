@@ -388,7 +388,7 @@ def test_run_pairing_helper_uses_paired_peers_endpoint(monkeypatch, capsys) -> N
         openclaw_command="openclaw",
     )
 
-    inputs = iter(["y", "", ""])
+    inputs = iter(["y", ""])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
     monkeypatch.setattr(installer.time, "sleep", lambda _: None)
 
@@ -410,3 +410,39 @@ def test_run_pairing_helper_uses_paired_peers_endpoint(monkeypatch, capsys) -> N
     assert any(url.endswith("/api/v1/pairing/peers") for url in calls)
     assert not any(url.endswith("/api/v1/pairing/verify") for url in calls)
     assert "Pairing confirmed via VK." in output
+
+
+def test_run_pairing_helper_uses_api_base_url_from_env(monkeypatch, capsys) -> None:
+    calls: list[str] = []
+    config = installer.InstallConfig(
+        admin_api_token="admin-token",
+        vk_access_token="vk-token",
+        vk_allowed_peers="42",
+        persistence_mode="file",
+        database_dsn="",
+        redis_dsn="",
+        openclaw_command="openclaw",
+    )
+
+    inputs = iter(["y", ""])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    monkeypatch.setattr(installer.time, "sleep", lambda _: None)
+    monkeypatch.setenv(installer.API_BASE_URL_ENV, "http://127.0.0.1:18000")
+
+    def fake_http_json(url: str, *, method: str, payload: dict[str, object], bearer_token: str) -> dict[str, object]:
+        calls.append(url)
+        if url.endswith("/api/v1/pairing/code"):
+            return {"peer_id": 42, "code": "ABCD1234"}
+        if url.endswith("/api/v1/pairing/peers"):
+            return {"items": [42], "count": 1}
+        if url.endswith("/api/v1/status"):
+            return {"mode": "plain"}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(installer, "_http_json", fake_http_json)
+
+    installer.run_pairing_helper(config, platform_name="linux")
+    output = capsys.readouterr().out
+
+    assert all(url.startswith("http://127.0.0.1:18000/") for url in calls)
+    assert "Using API URL: http://127.0.0.1:18000" in output
