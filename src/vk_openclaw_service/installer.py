@@ -10,6 +10,7 @@ from pathlib import Path
 import secrets
 import shlex
 import shutil
+import signal
 import socket
 import subprocess  # nosec B404
 import sys
@@ -25,6 +26,14 @@ DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000"
 API_BASE_URL_ENV = "VK_OPENCLAW_API_BASE_URL"
 VK_API_BASE_URL = "https://api.vk.com/method"
 VK_API_VERSION = "5.199"
+SERVICE_MODE_SYSTEM = "system-service"
+SERVICE_MODE_FALLBACK = "fallback-local"
+SUPPORTED_SERVICE_MODES = {SERVICE_MODE_SYSTEM, SERVICE_MODE_FALLBACK}
+FALLBACK_RUN_DIR = ".run"
+FALLBACK_API_PID = "vk-openclaw-api.pid"
+FALLBACK_WORKER_PID = "vk-openclaw-worker.pid"
+FALLBACK_API_LOG = "/tmp/vk_api.log"
+FALLBACK_WORKER_LOG = "/tmp/vk_worker.log"
 AUTHOR_INFO_LINES = [
     "Author: Гарипов Нияз Варисович февраль 2026",
     "- Email: garipovn@yandex.ru",
@@ -463,7 +472,7 @@ def prompt_install_config(
     )
 
 
-def render_env_local(config: InstallConfig, *, target_os: str) -> str:
+def render_env_local(config: InstallConfig, *, target_os: str, service_mode: str) -> str:
     completed_at = datetime.now(UTC).replace(microsecond=0).isoformat()
     lines = [
         f"ADMIN_API_TOKEN={config.admin_api_token}",
@@ -493,7 +502,7 @@ def render_env_local(config: InstallConfig, *, target_os: str) -> str:
         "REPLAY_TTL_SEC=300",
         "RETRY_QUEUE_KEY=vk-openclaw:retry",
         f"INSTALL_TARGET_OS={target_os}",
-        "SERVICE_MODE=system-service",
+        f"SERVICE_MODE={service_mode}",
         f"SETUP_COMPLETED_AT={completed_at}",
     ]
     return "\n".join(lines) + "\n"
@@ -614,6 +623,180 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def resolve_service_mode(*, working_directory: Path | None = None) -> str:
+    env_mode = os.environ.get("SERVICE_MODE", "").strip().lower()
+    if env_mode in SUPPORTED_SERVICE_MODES:
+        return env_mode
+    wd = working_directory or Path.cwd()
+    env_path = wd / ".env.local"
+    file_mode = load_env_file(env_path).get("SERVICE_MODE", "").strip().lower()
+    if file_mode in SUPPORTED_SERVICE_MODES:
+        return file_mode
+    return SERVICE_MODE_SYSTEM
+
+
+def fallback_pid_paths(*, working_directory: Path) -> dict[str, Path]:
+    run_dir = working_directory / FALLBACK_RUN_DIR
+    return {
+        "api": run_dir / FALLBACK_API_PID,
+        "worker": run_dir / FALLBACK_WORKER_PID,
+    }
+
+
+def _read_pid(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return None
+    try:
+        pid = int(raw)
+    except ValueError:
+        return None
+    if pid <= 0:
+        return None
+    return pid
+
+
+def _is_pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _write_pid(path: Path, pid: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(pid), encoding="utf-8")
+
+
+def _remove_pid_file(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _stop_pid(path: Path) -> bool:
+    pid = _read_pid(path)
+    if pid is None:
+        _remove_pid_file(path)
+        return True
+    if not _is_pid_alive(pid):
+        _remove_pid_file(path)
+        return True
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(10):
+        if not _is_pid_alive(pid):
+            _remove_pid_file(path)
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def _local_status_payload(*, env_values: dict[str, str], base_url: str) -> tuple[bool, str]:
+    admin = env_values.get("ADMIN_API_TOKEN", "").strip()
+    if not admin:
+        return False, "ADMIN_API_TOKEN is missing in .env.local."
+    try:
+        payload = _http_json(
+            f"{base_url.rstrip('/')}/api/v1/status",
+            method="GET",
+            payload={},
+            bearer_token=admin,
+        )
+    except (error.HTTPError, error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        return False, str(exc)
+    return True, json.dumps(payload, ensure_ascii=False)
+
+
+def start_local_fallback_processes(*, working_directory: Path, env_path: Path, cli_executable: str) -> tuple[bool, str]:
+    env_values = load_env_file(env_path)
+    merged_env = dict(os.environ)
+    merged_env.update(env_values)
+    pid_paths = fallback_pid_paths(working_directory=working_directory)
+    for role, path in pid_paths.items():
+        pid = _read_pid(path)
+        if pid is not None and _is_pid_alive(pid):
+            return False, f"{role} process is already running (pid={pid})."
+        _remove_pid_file(path)
+
+    with Path(FALLBACK_API_LOG).open("ab") as api_log, Path(FALLBACK_WORKER_LOG).open("ab") as worker_log:
+        api_proc = subprocess.Popen(  # nosec B603
+            [cli_executable, "run-api", "--host", "127.0.0.1", "--port", "8000"],
+            cwd=str(working_directory),
+            env=merged_env,
+            stdout=api_log,
+            stderr=api_log,
+        )
+        worker_proc = subprocess.Popen(  # nosec B603
+            [cli_executable, "run-worker", "--interval-seconds", "5"],
+            cwd=str(working_directory),
+            env=merged_env,
+            stdout=worker_log,
+            stderr=worker_log,
+        )
+    _write_pid(pid_paths["api"], api_proc.pid)
+    _write_pid(pid_paths["worker"], worker_proc.pid)
+    time.sleep(0.8)
+    alive_api = _is_pid_alive(api_proc.pid)
+    alive_worker = _is_pid_alive(worker_proc.pid)
+    if alive_api and alive_worker:
+        return True, "fallback-local processes started."
+    return False, "fallback-local process start failed; inspect /tmp/vk_api.log and /tmp/vk_worker.log."
+
+
+def status_local_fallback(*, working_directory: Path, env_path: Path) -> int:
+    env_values = load_env_file(env_path)
+    pid_paths = fallback_pid_paths(working_directory=working_directory)
+    api_pid = _read_pid(pid_paths["api"])
+    worker_pid = _read_pid(pid_paths["worker"])
+    api_running = api_pid is not None and _is_pid_alive(api_pid)
+    worker_running = worker_pid is not None and _is_pid_alive(worker_pid)
+    print("fallback-local status:")
+    print(f"- api: {'running' if api_running else 'down'}" + (f" (pid={api_pid})" if api_pid else ""))
+    print(f"- worker: {'running' if worker_running else 'down'}" + (f" (pid={worker_pid})" if worker_pid else ""))
+    base_url = os.environ.get(API_BASE_URL_ENV, DEFAULT_LOCAL_API_BASE_URL).strip() or DEFAULT_LOCAL_API_BASE_URL
+    api_ok, api_details = _local_status_payload(env_values=env_values, base_url=base_url)
+    if api_ok:
+        print(f"- api health: ok ({base_url}/api/v1/status)")
+    else:
+        print(f"- api health: down ({api_details})")
+    if api_running and worker_running and api_ok:
+        return 0
+    return 1
+
+
+def stop_local_fallback(*, working_directory: Path) -> int:
+    pid_paths = fallback_pid_paths(working_directory=working_directory)
+    worker_ok = _stop_pid(pid_paths["worker"])
+    api_ok = _stop_pid(pid_paths["api"])
+    if worker_ok and api_ok:
+        print("fallback-local processes stopped.")
+        return 0
+    print("fallback-local stop warning: some processes are still alive.")
+    return 1
+
+
+def wait_for_local_api_ready(*, env_path: Path, timeout_seconds: int = 20) -> tuple[bool, str]:
+    env_values = load_env_file(env_path)
+    base_url = os.environ.get(API_BASE_URL_ENV, DEFAULT_LOCAL_API_BASE_URL).strip() or DEFAULT_LOCAL_API_BASE_URL
+    deadline = time.time() + timeout_seconds
+    last_error = "timeout"
+    while time.time() < deadline:
+        ok, details = _local_status_payload(env_values=env_values, base_url=base_url)
+        if ok:
+            return True, ""
+        last_error = details
+        time.sleep(1)
+    return False, last_error
+
+
 def _xml_escape(value: str) -> str:
     return (
         value.replace("&", "&amp;")
@@ -706,6 +889,36 @@ def install_service_files(*, platform_name: str, working_directory: Path, env_pa
 def manage_service(command: str) -> int:
     platform_name = detect_platform()
     if platform_name == "linux":
+        resolved_mode = resolve_service_mode(working_directory=Path.cwd())
+        if resolved_mode == SERVICE_MODE_FALLBACK:
+            env_path = Path.cwd() / ".env.local"
+            if not env_path.exists():
+                print("Error: .env.local was not found. Run `vk-openclaw setup` first.")
+                return 1
+            if command == "start":
+                ok, message = start_local_fallback_processes(
+                    working_directory=Path.cwd(),
+                    env_path=env_path,
+                    cli_executable=resolve_cli_executable(),
+                )
+                print(message)
+                return 0 if ok else 1
+            if command == "stop":
+                return stop_local_fallback(working_directory=Path.cwd())
+            if command == "status":
+                return status_local_fallback(working_directory=Path.cwd(), env_path=env_path)
+            if command == "restart":
+                stop_local_fallback(working_directory=Path.cwd())
+                ok, message = start_local_fallback_processes(
+                    working_directory=Path.cwd(),
+                    env_path=env_path,
+                    cli_executable=resolve_cli_executable(),
+                )
+                print(message)
+                return 0 if ok else 1
+            print(f"Error: unsupported service command '{command}' in fallback-local mode.")
+            return 1
+
         if command == "status":
             result = subprocess.run(  # nosec
                 ["systemctl", "--user", "--no-pager", "--full", "status", SYSTEMD_UNIT_API, SYSTEMD_UNIT_WORKER],
@@ -956,9 +1169,22 @@ def render_local_fallback_commands(*, working_directory: Path) -> list[str]:
     ]
 
 
+def render_manual_pairing_helper_commands(*, working_directory: Path) -> list[str]:
+    wd = shlex.quote(str(working_directory))
+    return [
+        f"cd {wd}",
+        "source .venv/bin/activate",
+        "set -a && source .env.local && set +a",
+        "ADMIN=$(grep '^ADMIN_API_TOKEN=' .env.local | cut -d= -f2-)",
+        "PEER=$(grep '^VK_ALLOWED_PEERS=' .env.local | cut -d= -f2- | cut -d, -f1)",
+        "curl -s -H \"Authorization: Bearer $ADMIN\" -H \"Content-Type: application/json\" -d \"{\\\"peer_id\\\":$PEER}\" http://127.0.0.1:8000/api/v1/pairing/code",
+        "# send /pair <code> in VK chat, then validate: /status and /ask hello",
+    ]
+
+
 def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool) -> int:
     platform_name = detect_platform()
-    service_mode = "system-service"
+    service_mode = SERVICE_MODE_SYSTEM
     print_author_info()
     if platform_name == "unsupported":
         print("Error: setup is supported only on Linux and Windows.")
@@ -973,7 +1199,7 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
                 "Warning: systemd --user is unavailable, using fallback-local mode.",
             )
             print(_bi(platform_name, f"Причина: {systemd_reason}", f"Reason: {systemd_reason}"))
-            service_mode = "fallback-local"
+            service_mode = SERVICE_MODE_FALLBACK
     if platform_name == "windows" and resolve_winsw_executable() is None and not dry_run:
         print("Error: WinSW is required on Windows. Set WINSW_PATH or provide tools/winsw/winsw.exe.")
         return 1
@@ -1009,7 +1235,7 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 
     print(render_secret_confirmation(config, platform_name=platform_name))
 
-    env_content = render_env_local(config, target_os=platform_name)
+    env_content = render_env_local(config, target_os=platform_name, service_mode=service_mode)
     workdir = Path.cwd()
     env_path = workdir / ".env.local"
     if dry_run:
@@ -1070,7 +1296,7 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
                 f"Warning: failed to mark wrapper executable: {exc}",
             )
 
-    if service_mode == "system-service":
+    if service_mode == SERVICE_MODE_SYSTEM:
         install_code = install_service_files(
             platform_name=platform_name,
             working_directory=workdir,
@@ -1131,11 +1357,54 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
         _print_bi(platform_name, "Команды fallback-local:", "Fallback-local commands:")
         for line in render_local_fallback_commands(working_directory=workdir):
             print(f"  {line}")
-        _print_bi(
-            platform_name,
-            "Проверка в VK после запуска: /status, затем /ask привет.",
-            "After launching, validate in VK: /status, then /ask hello.",
-        )
+        launch_success = False
+        if not non_interactive:
+            autostart = input(
+                _bi(
+                    platform_name,
+                    "Запустить fallback-local сервисы сейчас? [Y/n]: ",
+                    "Start fallback-local services now? [Y/n]: ",
+                )
+            ).strip().lower()
+            if not autostart.startswith("n"):
+                launch_success, launch_reason = start_local_fallback_processes(
+                    working_directory=workdir,
+                    env_path=env_path,
+                    cli_executable=resolve_cli_executable(),
+                )
+                _print_bi(
+                    platform_name,
+                    f"Результат fallback запуска: {launch_reason}",
+                    f"Fallback launch result: {launch_reason}",
+                )
+                if launch_success:
+                    api_ready, api_reason = wait_for_local_api_ready(env_path=env_path)
+                    if api_ready:
+                        _print_bi(
+                            platform_name,
+                            "Локальный API доступен, запускаем pairing helper.",
+                            "Local API is ready, launching pairing helper.",
+                        )
+                        run_pairing_helper(config, platform_name=platform_name)
+                    else:
+                        _print_bi(
+                            platform_name,
+                            f"Предупреждение: API health-check не прошел ({api_reason}).",
+                            f"Warning: API health-check failed ({api_reason}).",
+                        )
+        if not launch_success:
+            _print_bi(
+                platform_name,
+                "Pairing helper вручную после запуска fallback:",
+                "Manual pairing helper after fallback launch:",
+            )
+            for line in render_manual_pairing_helper_commands(working_directory=workdir):
+                print(f"  {line}")
+            _print_bi(
+                platform_name,
+                "Проверка в VK после pairing: /status, затем /ask привет.",
+                "After pairing validate in VK: /status, then /ask hello.",
+            )
 
     _print_bi(platform_name, "Где взять токены позже:", "Where to find tokens later:")
     print(f"- .env.local: {env_path}")

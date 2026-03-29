@@ -67,7 +67,7 @@ Linux wizard notes:
 
 It writes local `.env.local` in all modes.
 - If `systemd --user` is available: installs system service, restarts service (fallback: start), and runs status check.
-- If `systemd --user` is unavailable: switches to `fallback-local` automatically and prints local launch commands.
+- If `systemd --user` is unavailable: switches to `fallback-local`, offers local API+worker start, checks API health, and runs pairing helper in the same wizard flow.
 
 VK token source:
 1. Create/open VK community.
@@ -86,6 +86,9 @@ vk-openclaw start
 vk-openclaw status
 vk-openclaw stop
 ```
+Behavior is mode-aware:
+- `SERVICE_MODE=system-service` -> `systemctl --user` backend.
+- `SERVICE_MODE=fallback-local` -> local process manager backend (PID + API health).
 
 ## Pairing helper (post-setup)
 Interactive setup offers pairing helper:
@@ -101,12 +104,18 @@ If `systemctl --user` fails with `Failed to connect to bus`, run:
 ```bash
 cd ~/VK_OpenClaw_Service
 source .venv/bin/activate
-set -a && source .env.local && set +a
-nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &
-nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &
-tail -n 50 /tmp/vk_worker.log
+vk-openclaw start
+vk-openclaw status
 ```
-Important: load `.env.local` before manual worker start. Otherwise worker may fail with `VK API error 15: token required`.
+Important: if you run API/worker manually, load `.env.local` first. Otherwise worker may fail with `VK API error 15: token required`.
+
+Manual pairing helper (if setup pairing step was skipped):
+```bash
+ADMIN=$(grep '^ADMIN_API_TOKEN=' .env.local | cut -d= -f2-)
+PEER=$(grep '^VK_ALLOWED_PEERS=' .env.local | cut -d= -f2- | cut -d, -f1)
+curl -s -H "Authorization: Bearer $ADMIN" -H "Content-Type: application/json" -d "{\"peer_id\":$PEER}" http://127.0.0.1:8000/api/v1/pairing/code
+```
+Then send `/pair <code>` in VK chat and validate `/status`, then `/ask hello`.
 
 ## Troubleshooting
 1. Invalid VK token:

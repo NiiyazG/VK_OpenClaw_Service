@@ -34,13 +34,18 @@ def test_render_env_local_contains_expected_keys() -> None:
         openclaw_command="openclaw",
     )
 
-    env_text = installer.render_env_local(config, target_os="linux")
+    env_text = installer.render_env_local(
+        config,
+        target_os="linux",
+        service_mode=installer.SERVICE_MODE_SYSTEM,
+    )
 
     assert "ADMIN_API_TOKEN=admin-token" in env_text
     assert "VK_ACCESS_TOKEN=vk-token" in env_text
     assert "PERSISTENCE_MODE=file" in env_text
     assert "FREE_TEXT_ASK_ENABLED=true" in env_text
     assert "INSTALL_TARGET_OS=linux" in env_text
+    assert "SERVICE_MODE=system-service" in env_text
 
 
 def test_redact_env_preview_masks_sensitive_values() -> None:
@@ -443,6 +448,48 @@ def test_run_setup_linux_without_systemd_uses_fallback_local(monkeypatch, tmp_pa
     assert "fallback-local" in output
     assert "set -a && source .env.local && set +a" in output
     assert "token required" in output.lower()
+    env_text = (workdir / ".env.local").read_text(encoding="utf-8")
+    assert "SERVICE_MODE=fallback-local" in env_text
+
+
+def test_run_setup_fallback_autostart_runs_pairing_helper(monkeypatch, tmp_path: Path) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (False, "Failed to connect to bus"))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(
+        installer,
+        "prompt_install_config",
+        lambda **kwargs: installer.InstallConfig(
+            admin_api_token="admin-token",
+            vk_access_token="vk-token",
+            vk_allowed_peers="42",
+            persistence_mode="file",
+            database_dsn="",
+            redis_dsn="",
+            openclaw_command="openclaw",
+        ),
+    )
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    monkeypatch.setattr(
+        installer,
+        "start_local_fallback_processes",
+        lambda **kwargs: (True, "fallback-local processes started."),
+    )
+    monkeypatch.setattr(installer, "wait_for_local_api_ready", lambda **kwargs: (True, ""))
+    called = {"pairing": 0}
+    monkeypatch.setattr(
+        installer,
+        "run_pairing_helper",
+        lambda config, *, platform_name: called.__setitem__("pairing", called["pairing"] + 1),
+    )
+
+    exit_code = installer.run_setup(non_interactive=False, config_path=None, dry_run=False)
+    assert exit_code == 0
+    assert called["pairing"] == 1
 
 
 def test_manage_service_linux_uses_systemd(monkeypatch) -> None:
@@ -462,6 +509,50 @@ def test_manage_service_linux_uses_systemd(monkeypatch) -> None:
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
     assert installer.manage_service("start") == 0
     assert captured[0][:2] == ["systemctl", "--user"]
+
+
+def test_manage_service_linux_fallback_uses_local_status(monkeypatch, tmp_path: Path) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    (workdir / ".env.local").write_text("SERVICE_MODE=fallback-local\nADMIN_API_TOKEN=x\n", encoding="utf-8")
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "status_local_fallback", lambda **kwargs: 0)
+
+    called: list[list[str]] = []
+
+    class FakeProcess:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        called.append(args)
+        return FakeProcess()
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    assert installer.manage_service("status") == 0
+    assert called == []
+
+
+def test_manage_service_linux_fallback_start_routes_to_local_runner(monkeypatch, tmp_path: Path) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    (workdir / ".env.local").write_text("SERVICE_MODE=fallback-local\n", encoding="utf-8")
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
+
+    captured: dict[str, object] = {}
+
+    def fake_start(**kwargs):
+        captured.update(kwargs)
+        return True, "ok"
+
+    monkeypatch.setattr(installer, "start_local_fallback_processes", fake_start)
+    assert installer.manage_service("start") == 0
+    assert captured["working_directory"] == workdir
+    assert str(captured["env_path"]).endswith(".env.local")
 
 
 def test_manage_service_windows_uses_winsw(monkeypatch, tmp_path: Path) -> None:

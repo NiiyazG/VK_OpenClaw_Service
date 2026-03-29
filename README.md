@@ -31,7 +31,7 @@ chmod +x ./install.sh
 ./install.sh
 ```
 
-If `systemd --user` is unavailable during setup, installer now switches to `fallback-local` automatically and prints ready-to-run local commands.
+If `systemd --user` is unavailable during setup, installer switches to `fallback-local` automatically, can start local API+worker, and then runs pairing helper in the same setup flow.
 
 If first setup failed (clean reinstall, Linux):
 ```bash
@@ -47,9 +47,10 @@ chmod +x ./install.sh
 After reinstall (important):
 ```bash
 source .venv/bin/activate
-systemctl --user restart vk-openclaw-api.service vk-openclaw-worker.service
 vk-openclaw status
 ```
+If service mode is `system-service`, `vk-openclaw status` uses `systemctl --user`.
+If service mode is `fallback-local`, `vk-openclaw status` uses local PID/API checks.
 
 VK token source (community flow):
 1. Create or open your VK community.
@@ -96,11 +97,16 @@ If `systemctl --user` is unavailable (`Failed to connect to bus`), use fallback 
 ```bash
 cd ~/VK_OpenClaw_Service
 source .venv/bin/activate
-set -a && source .env.local && set +a
-nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &
-nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &
-tail -n 60 /tmp/vk_worker.log
+vk-openclaw start
+vk-openclaw status
 ```
+If fallback was not paired yet, run pairing helper manually:
+```bash
+ADMIN=$(grep '^ADMIN_API_TOKEN=' .env.local | cut -d= -f2-)
+PEER=$(grep '^VK_ALLOWED_PEERS=' .env.local | cut -d= -f2- | cut -d, -f1)
+curl -s -H "Authorization: Bearer $ADMIN" -H "Content-Type: application/json" -d "{\"peer_id\":$PEER}" http://127.0.0.1:8000/api/v1/pairing/code
+```
+Then send `/pair <code>` in VK chat and validate `/status`, then `/ask hello`.
 
 ## Configuration / Конфигурация
 Required runtime variables (minimum):
