@@ -667,6 +667,24 @@ def _detect_primary_peer(vk_allowed_peers: str) -> int | None:
     return None
 
 
+def _parse_allowed_peers(vk_allowed_peers: str) -> list[int]:
+    parsed: list[int] = []
+    seen: set[int] = set()
+    for item in vk_allowed_peers.split(","):
+        raw = item.strip()
+        if not raw:
+            continue
+        try:
+            peer_id = int(raw)
+        except ValueError:
+            continue
+        if peer_id in seen:
+            continue
+        seen.add(peer_id)
+        parsed.append(peer_id)
+    return parsed
+
+
 def _http_json(url: str, *, method: str, payload: dict[str, object], bearer_token: str) -> dict[str, object]:
     method_upper = method.upper()
     data = None
@@ -702,14 +720,38 @@ def _peer_list_from_payload(payload: dict[str, object]) -> set[int]:
 
 
 def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
-    peer_id = _detect_primary_peer(config.vk_allowed_peers)
-    if peer_id is None:
+    allowed_peers = _parse_allowed_peers(config.vk_allowed_peers)
+    if not allowed_peers:
         _print_bi(
             platform_name,
             "Pairing helper пропущен: не удалось разобрать VK_ALLOWED_PEERS.",
             "Pairing helper skipped: could not parse VK_ALLOWED_PEERS.",
         )
         return
+    peer_id = allowed_peers[0]
+    if len(allowed_peers) > 1:
+        peers_text = ", ".join(str(item) for item in allowed_peers)
+        _print_bi(
+            platform_name,
+            f"Найдено несколько VK_ALLOWED_PEERS: {peers_text}",
+            f"Multiple VK_ALLOWED_PEERS detected: {peers_text}",
+        )
+        chosen_raw = _prompt_with_default(
+            _bi(platform_name, "PAIRING_PEER_ID", "PAIRING_PEER_ID"),
+            str(peer_id),
+        )
+        try:
+            chosen_peer = int(chosen_raw)
+        except ValueError:
+            chosen_peer = peer_id
+        if chosen_peer in allowed_peers:
+            peer_id = chosen_peer
+        else:
+            _print_bi(
+                platform_name,
+                f"PAIRING_PEER_ID={chosen_raw} не входит в VK_ALLOWED_PEERS, используем {peer_id}.",
+                f"PAIRING_PEER_ID={chosen_raw} is not in VK_ALLOWED_PEERS, using {peer_id}.",
+            )
     print()
     _print_bi(platform_name, "Pairing helper", "Pairing helper")
     _print_bi(
@@ -900,7 +942,14 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
     print(f"- Config file: {env_path}")
     print(_bi(platform_name, "- Режим сервиса: system-service", "- Service mode: system-service"))
 
-    start_code = manage_service("start")
+    start_code = manage_service("restart")
+    if start_code != 0:
+        _print_bi(
+            platform_name,
+            "Предупреждение: restart вернул ненулевой код, пробуем start.",
+            "Warning: service restart returned non-zero status, trying start.",
+        )
+        start_code = manage_service("start")
     if start_code != 0:
         _print_bi(
             platform_name,

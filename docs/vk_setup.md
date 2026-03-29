@@ -49,8 +49,9 @@ VK_ALLOWED_PEERS=123456789
 ### 3. Pairing после setup
 После установки мастер предлагает pairing helper:
 1. Генерирует pair-code через API.
-2. Показывает команду для VK: `/pair <code>`.
-3. Ждет подтверждение pairing через список paired peers и рекомендует проверить `/status` и `/ask`.
+2. Если в `VK_ALLOWED_PEERS` несколько peer_id, запрашивает `PAIRING_PEER_ID`.
+3. Показывает команду для VK: `/pair <code>`.
+4. Ждет подтверждение pairing через список paired peers (до ~15 секунд) и рекомендует проверить `/status` и `/ask`.
 
 Если helper пропущен:
 - вручную вызовите `POST /api/v1/pairing/code`,

@@ -44,7 +44,9 @@ class PollingService:
         processed = 0
         for item in sorted(messages, key=lambda message: message.message_id):
             state = self.checkpoint_repository.get_or_create(item.peer_id)
-            if item.outgoing or item.message_id <= state.last_committed_message_id:
+            if item.message_id <= state.last_committed_message_id:
+                continue
+            if item.outgoing and not _is_pair_command(item.text):
                 continue
             self.worker_service.process_message(
                 peer_id=item.peer_id,
@@ -55,3 +57,8 @@ class PollingService:
             )
             processed += 1
         return processed
+
+
+def _is_pair_command(text: str) -> bool:
+    stripped = text.strip().lower()
+    return stripped == "/pair" or stripped.startswith("/pair ")

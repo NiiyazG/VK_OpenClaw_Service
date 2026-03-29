@@ -376,6 +376,10 @@ def test_peer_list_from_payload_parses_ints_and_numeric_strings() -> None:
     assert installer._peer_list_from_payload(payload) == {42, 77}
 
 
+def test_parse_allowed_peers_filters_invalid_and_duplicates() -> None:
+    assert installer._parse_allowed_peers("42, bad, 77,42, ,100") == [42, 77, 100]
+
+
 def test_run_pairing_helper_uses_paired_peers_endpoint(monkeypatch, capsys) -> None:
     calls: list[str] = []
     config = installer.InstallConfig(
@@ -412,6 +416,41 @@ def test_run_pairing_helper_uses_paired_peers_endpoint(monkeypatch, capsys) -> N
     assert "Pairing confirmed via VK." in output
 
 
+def test_run_pairing_helper_prompts_for_pairing_peer_when_multiple(monkeypatch, capsys) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    config = installer.InstallConfig(
+        admin_api_token="admin-token",
+        vk_access_token="vk-token",
+        vk_allowed_peers="42,43",
+        persistence_mode="file",
+        database_dsn="",
+        redis_dsn="",
+        openclaw_command="openclaw",
+    )
+
+    inputs = iter(["43", "y", ""])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    monkeypatch.setattr(installer.time, "sleep", lambda _: None)
+
+    def fake_http_json(url: str, *, method: str, payload: dict[str, object], bearer_token: str) -> dict[str, object]:
+        calls.append((url, payload))
+        if url.endswith("/api/v1/pairing/code"):
+            return {"peer_id": 43, "code": "ABCD1234"}
+        if url.endswith("/api/v1/pairing/peers"):
+            return {"items": [43], "count": 1}
+        if url.endswith("/api/v1/status"):
+            return {"mode": "plain"}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(installer, "_http_json", fake_http_json)
+    installer.run_pairing_helper(config, platform_name="linux")
+    output = capsys.readouterr().out
+
+    pairing_code_payloads = [payload for url, payload in calls if url.endswith("/api/v1/pairing/code")]
+    assert pairing_code_payloads[0]["peer_id"] == 43
+    assert "Multiple VK_ALLOWED_PEERS detected" in output
+
+
 def test_run_pairing_helper_uses_api_base_url_from_env(monkeypatch, capsys) -> None:
     calls: list[str] = []
     config = installer.InstallConfig(
@@ -446,3 +485,40 @@ def test_run_pairing_helper_uses_api_base_url_from_env(monkeypatch, capsys) -> N
 
     assert all(url.startswith("http://127.0.0.1:18000/") for url in calls)
     assert "Using API URL: http://127.0.0.1:18000" in output
+
+
+def test_run_setup_prefers_restart_then_falls_back_to_start(monkeypatch, tmp_path: Path) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    config_path = workdir / "install.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ADMIN_API_TOKEN": "admin-token",
+                "VK_ACCESS_TOKEN": "vk-token",
+                "VK_ALLOWED_PEERS": "42",
+                "PERSISTENCE_MODE": "file",
+                "OPENCLAW_COMMAND": "openclaw",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
+    monkeypatch.setattr(installer, "install_service_files", lambda **kwargs: 0)
+
+    calls: list[str] = []
+
+    def fake_manage_service(command: str) -> int:
+        calls.append(command)
+        if command == "restart":
+            return 1
+        return 0
+
+    monkeypatch.setattr(installer, "manage_service", fake_manage_service)
+    exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    assert exit_code == 0
+    assert calls[:2] == ["restart", "start"]

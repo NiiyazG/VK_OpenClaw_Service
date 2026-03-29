@@ -44,6 +44,7 @@ chmod +x ./install.sh
 
 After reinstall (important):
 ```bash
+source .venv/bin/activate
 systemctl --user restart vk-openclaw-api.service vk-openclaw-worker.service
 vk-openclaw status
 ```
@@ -68,6 +69,17 @@ vk-openclaw start
 vk-openclaw status
 vk-openclaw stop
 ```
+
+If `vk-openclaw: command not found`:
+```bash
+source .venv/bin/activate
+vk-openclaw status
+```
+Or run directly:
+```bash
+./.venv/bin/vk-openclaw status
+```
+
 ## Configuration / Конфигурация
 Required runtime variables (minimum):
 - `ADMIN_API_TOKEN`
@@ -83,11 +95,19 @@ Step-by-step token and `peer_id` setup:
 
 Pairing flow (VK-first):
 1. Setup helper requests a code via admin API.
-2. You send `/pair <code>` in the target VK chat.
-3. Worker verifies the code from the VK message and replies:
+2. If `VK_ALLOWED_PEERS` contains several peers, helper asks `PAIRING_PEER_ID` and uses that peer for code generation.
+3. You send `/pair <code>` in the target VK chat.
+4. Setup helper waits up to ~15 seconds for the selected peer in `paired peers`.
+5. Worker verifies the code from the VK message and replies:
    - `Pairing successful.`
    - `Invalid or expired pairing code.`
-4. Setup helper confirms that the peer appears in paired peers.
+6. Setup helper confirms that the peer appears in paired peers.
+7. Pairing helper uses `http://127.0.0.1:8000` by default.
+   Override only when needed:
+   - `VK_OPENCLAW_API_BASE_URL=http://<host>:<port>`
+
+Note:
+- `/pair <code>` is handled by worker even when VK marks the message as outgoing (user-token scenario).
 
 If VK does not respond:
 - verify `VK_ALLOWED_PEERS` contains the real `peer_id`,

@@ -66,9 +66,11 @@ Linux wizard notes:
 - if `ADMIN_API_TOKEN` is auto-generated, installer shows it once and asks to save it
 
 It writes local `.env.local`, installs service mode, starts service, and runs status check.
+It writes local `.env.local`, installs service mode, restarts service (fallback: start), and runs status check.
 
 ## Service commands
 ```bash
+source .venv/bin/activate
 vk-openclaw start
 vk-openclaw status
 vk-openclaw stop
@@ -77,6 +79,7 @@ vk-openclaw stop
 ## Pairing helper (post-setup)
 Interactive setup offers pairing helper:
 - requests pair code from API
+- if `VK_ALLOWED_PEERS` has multiple values, asks `PAIRING_PEER_ID`
 - tells user to run `/pair <code>` in VK
 - waits until peer appears in `/api/v1/pairing/peers`
 - suggests `/status` and `/ask`
