@@ -220,6 +220,33 @@ def test_verify_vk_access_token_ok(monkeypatch) -> None:
     assert reason == ""
 
 
+def test_verify_vk_access_token_uses_conversations_fallback(monkeypatch) -> None:
+    responses = iter(
+        [
+            '{"response":[]}',
+            '{"response":{"count":0,"items":[]}}',
+        ]
+    )
+
+    class FakeResponse:
+        def __init__(self, body: str) -> None:
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self._body.encode("utf-8")
+
+    monkeypatch.setattr(installer.request, "urlopen", lambda *args, **kwargs: FakeResponse(next(responses)))
+    ok, reason = installer.verify_vk_access_token("vk-token")
+    assert ok is True
+    assert reason == ""
+
+
 def test_verify_vk_access_token_vk_error(monkeypatch) -> None:
     class FakeResponse:
         def __enter__(self):
@@ -236,6 +263,13 @@ def test_verify_vk_access_token_vk_error(monkeypatch) -> None:
     assert ok is False
     assert "error 15" in reason.lower()
     assert "token required" in reason.lower()
+
+
+def test_is_fatal_vk_token_reason() -> None:
+    assert installer._is_fatal_vk_token_reason("VK API error 15: Access denied: token required")
+    assert installer._is_fatal_vk_token_reason("VK API error 5: User authorization failed")
+    assert not installer._is_fatal_vk_token_reason("VK API request failed: <urlopen error [Errno -3]>")
+    assert not installer._is_fatal_vk_token_reason("VK API returned unexpected response type.")
 
 
 def test_run_setup_blocks_when_openclaw_missing(monkeypatch, capsys) -> None:
@@ -638,6 +672,37 @@ def test_run_setup_fails_fast_when_vk_token_preflight_fails(monkeypatch, tmp_pat
     assert exit_code == 1
     assert "preflight" in output.lower()
     assert "token required" in output.lower()
+
+
+def test_run_setup_continues_when_vk_token_preflight_is_inconclusive(monkeypatch, tmp_path: Path, capsys) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    config_path = workdir / "install.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ADMIN_API_TOKEN": "admin-token",
+                "VK_ACCESS_TOKEN": "vk-token",
+                "VK_ALLOWED_PEERS": "42",
+                "PERSISTENCE_MODE": "file",
+                "OPENCLAW_COMMAND": "openclaw",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (False, "VK API request failed: timeout"))
+    monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
+    monkeypatch.setattr(installer, "install_service_files", lambda **kwargs: 0)
+    monkeypatch.setattr(installer, "manage_service", lambda command: 0)
+
+    exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "best-effort" in output
 
 
 def test_run_setup_marks_wrapper_as_executable(monkeypatch, tmp_path: Path) -> None:

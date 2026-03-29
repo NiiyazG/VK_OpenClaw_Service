@@ -243,41 +243,92 @@ def load_config_file(path: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
-def verify_vk_access_token(token: str) -> tuple[bool, str]:
-    token_value = token.strip()
-    if not token_value:
-        return False, "VK API error: token is empty."
+def _vk_api_call(token: str, method: str, params: dict[str, object]) -> dict[str, object]:
     body = urlencode(
         {
-            "access_token": token_value,
+            "access_token": token,
             "v": VK_API_VERSION,
+            **params,
         }
     ).encode("utf-8")
     req = request.Request(
-        url=f"{VK_API_BASE_URL}/users.get",
+        url=f"{VK_API_BASE_URL}/{method}",
         data=body,
         method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
+    with request.urlopen(req, timeout=8) as response:  # nosec B310
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("VK API returned unexpected response type.")
+    return payload
+
+
+def _vk_error_reason(payload: dict[str, object]) -> str | None:
+    if "error" not in payload:
+        return None
+    vk_error = payload["error"]
+    if isinstance(vk_error, dict):
+        code = vk_error.get("error_code", "unknown")
+        message = vk_error.get("error_msg", "unknown error")
+        return f"VK API error {code}: {message}"
+    return f"VK API error: {vk_error}"
+
+
+def _is_fatal_vk_token_reason(reason: str) -> bool:
+    reason_l = reason.lower()
+    fatal_markers = (
+        "error 5:",
+        "error 15:",
+        "error 27:",
+        "error 203:",
+        "token required",
+        "access denied",
+        "invalid access token",
+    )
+    return any(marker in reason_l for marker in fatal_markers)
+
+
+def verify_vk_access_token(token: str) -> tuple[bool, str]:
+    token_value = token.strip()
+    if not token_value:
+        return False, "VK API error: token is empty."
+
+    users_payload: dict[str, object]
     try:
-        with request.urlopen(req, timeout=8) as response:  # nosec B310
-            payload = json.loads(response.read().decode("utf-8"))
+        users_payload = _vk_api_call(token_value, "users.get", {})
     except (error.HTTPError, error.URLError, TimeoutError) as exc:
         return False, f"VK API request failed: {exc}"
     except json.JSONDecodeError as exc:
         return False, f"VK API returned invalid JSON: {exc}"
-    if not isinstance(payload, dict):
-        return False, "VK API returned unexpected response type."
-    if "error" in payload:
-        vk_error = payload["error"]
-        if isinstance(vk_error, dict):
-            code = vk_error.get("error_code", "unknown")
-            message = vk_error.get("error_msg", "unknown error")
-            return False, f"VK API error {code}: {message}"
-        return False, f"VK API error: {vk_error}"
-    response_obj = payload.get("response")
-    if not isinstance(response_obj, list) or not response_obj:
-        return False, "VK API returned empty response for users.get."
+    except ValueError as exc:
+        return False, str(exc)
+
+    users_reason = _vk_error_reason(users_payload)
+    if users_reason is not None:
+        return False, users_reason
+
+    users_response = users_payload.get("response")
+    if isinstance(users_response, list) and users_response:
+        return True, ""
+
+    # Fallback: some community tokens can have an unexpected users.get response shape.
+    try:
+        convo_payload = _vk_api_call(token_value, "messages.getConversations", {"count": 1})
+    except (error.HTTPError, error.URLError, TimeoutError) as exc:
+        return False, f"VK API request failed: {exc}"
+    except json.JSONDecodeError as exc:
+        return False, f"VK API returned invalid JSON: {exc}"
+    except ValueError as exc:
+        return False, str(exc)
+
+    convo_reason = _vk_error_reason(convo_payload)
+    if convo_reason is not None:
+        return False, convo_reason
+
+    convo_response = convo_payload.get("response")
+    if isinstance(convo_response, dict):
+        return True, ""
     return True, ""
 
 
@@ -977,18 +1028,30 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 
     vk_ok, vk_reason = verify_vk_access_token(config.vk_access_token)
     if not vk_ok:
+        if _is_fatal_vk_token_reason(vk_reason):
+            _print_bi(
+                platform_name,
+                "Ошибка: VK_ACCESS_TOKEN не прошел проверку preflight.",
+                "Error: VK_ACCESS_TOKEN failed preflight validation.",
+            )
+            print(_bi(platform_name, f"Причина: {vk_reason}", f"Reason: {vk_reason}"))
+            _print_bi(
+                platform_name,
+                "Проверьте токен и права в VK, затем запустите setup снова.",
+                "Check VK token and permissions, then run setup again.",
+            )
+            return 1
         _print_bi(
             platform_name,
-            "Ошибка: VK_ACCESS_TOKEN не прошел проверку preflight.",
-            "Error: VK_ACCESS_TOKEN failed preflight validation.",
+            "Предупреждение: preflight VK_ACCESS_TOKEN не дал однозначного ответа, продолжаем best-effort.",
+            "Warning: VK_ACCESS_TOKEN preflight was inconclusive; continuing in best-effort mode.",
         )
         print(_bi(platform_name, f"Причина: {vk_reason}", f"Reason: {vk_reason}"))
         _print_bi(
             platform_name,
-            "Проверьте токен и права в VK, затем запустите setup снова.",
-            "Check VK token and permissions, then run setup again.",
+            "После запуска проверьте в VK: /status, затем /ask привет; при сбое проверьте worker log.",
+            "After startup validate in VK: /status, then /ask hello; if it fails, inspect worker log.",
         )
-        return 1
 
     write_env_local(env_path, env_content)
     wrapper_path = workdir / "openclaw_agent_wrapper.sh"
