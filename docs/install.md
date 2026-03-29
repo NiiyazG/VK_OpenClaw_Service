@@ -68,6 +68,7 @@ Linux wizard notes:
 It writes local `.env.local` in all modes.
 - If `systemd --user` is available: installs system service, restarts service (fallback: start), and runs status check.
 - If `systemd --user` is unavailable: switches to `fallback-local`, offers local API+worker start, checks API health, and runs pairing helper in the same wizard flow.
+- On first worker run, historical chat backlog is skipped by default; only new messages are processed.
 
 VK token source:
 1. Create/open VK community.

@@ -32,6 +32,17 @@ chmod +x ./install.sh
 ```
 
 If `systemd --user` is unavailable during setup, installer switches to `fallback-local` automatically, can start local API+worker, and then runs pairing helper in the same setup flow.
+On first worker run, old chat history is skipped automatically; bot replies only to new messages after startup.
+
+## Screenshots / Скриншоты
+![Setup wizard step 1](pic/setup-wizard-01.png)
+Setup wizard: token input and initial configuration.
+
+![Setup wizard step 2](pic/setup-wizard-02.png)
+Setup wizard: service mode and pairing helper stage.
+
+![Fallback local run](pic/fallback-run-01.png)
+Fallback-local run: local API/worker launch and runtime checks.
 
 If first setup failed (clean reinstall, Linux):
 ```bash

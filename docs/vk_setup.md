@@ -33,6 +33,7 @@ vk-openclaw setup
 3. Отправьте в VK: `/pair <code>`.
 4. Helper проверяет, что peer появился в `GET /api/v1/pairing/peers`.
 5. После pairing проверьте `/status`, затем `/ask привет`.
+6. На первом запуске worker старые сообщения в чате не переигрываются: ответы идут только на новые сообщения.
 
 ### 3.1 Fallback-local путь
 - Если setup записал `SERVICE_MODE=fallback-local`, запускайте:
