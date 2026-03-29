@@ -18,6 +18,11 @@ from urllib.parse import urlparse
 SYSTEMD_UNIT_API = "vk-openclaw-api.service"
 SYSTEMD_UNIT_WORKER = "vk-openclaw-worker.service"
 WINDOWS_SERVICE_ID = "vk-openclaw-service"
+AUTHOR_INFO_LINES = [
+    "Author: Гарипов Нияз Варисович февраль 2026",
+    "- Email: garipovn@yandex.ru",
+    "- License: MIT (`LICENSE`)",
+]
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,42 @@ class InstallConfig:
     database_dsn: str
     redis_dsn: str
     openclaw_command: str
+
+
+def _bi(platform_name: str, ru: str, en: str) -> str:
+    if platform_name == "linux":
+        return f"{ru} / {en}"
+    return en
+
+
+def _print_bi(platform_name: str, ru: str, en: str) -> None:
+    print(_bi(platform_name, ru, en))
+
+
+def print_author_info() -> None:
+    for line in AUTHOR_INFO_LINES:
+        print(line)
+
+
+def format_secret_status(value: str) -> str:
+    secret = value.strip()
+    if not secret:
+        return "EMPTY"
+    return f"SET ({len(secret)} chars)"
+
+
+def render_secret_confirmation(config: InstallConfig, *, platform_name: str) -> str:
+    lines = [
+        _bi(platform_name, "Подтверждение секретов:", "Secret confirmation:"),
+        f"- ADMIN_API_TOKEN: {format_secret_status(config.admin_api_token)}",
+        f"- VK_ACCESS_TOKEN: {format_secret_status(config.vk_access_token)}",
+        _bi(
+            platform_name,
+            "Значения скрыты в целях безопасности.",
+            "Values are hidden for security reasons.",
+        ),
+    ]
+    return "\n".join(lines)
 
 
 def detect_platform() -> str:
@@ -138,7 +179,13 @@ def load_config_file(path: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
-def prompt_install_config(*, non_interactive: bool, config_path: Path | None) -> InstallConfig:
+def prompt_install_config(
+    *,
+    non_interactive: bool,
+    config_path: Path | None,
+    platform_name: str | None = None,
+) -> InstallConfig:
+    resolved_platform = platform_name or detect_platform()
     source: dict[str, str] = {}
     if config_path is not None:
         source = load_config_file(config_path)
@@ -156,41 +203,111 @@ def prompt_install_config(*, non_interactive: bool, config_path: Path | None) ->
             or _default_openclaw_command(),
         )
 
-    print("\nVK OpenClaw setup wizard\n")
-    print("What you need before start:")
-    print("1) VK_ACCESS_TOKEN (VK ID / VK developer settings, message permissions)")
-    print("2) VK_ALLOWED_PEERS (chat/dialog peer_id)")
-    print("3) OPENCLAW_COMMAND (usually openclaw or ./openclaw_agent_wrapper.sh)")
-    print("Docs: docs/vk_setup.md")
-    print("Security: secrets are written only to local .env.local and should never be committed.\n")
+    print()
+    _print_bi(resolved_platform, "Мастер установки VK OpenClaw", "VK OpenClaw setup wizard")
+    print()
+    _print_bi(resolved_platform, "Перед началом нужно:", "What you need before start:")
+    _print_bi(
+        resolved_platform,
+        "1) VK_ACCESS_TOKEN (настройки VK ID/VK Dev, права на сообщения)",
+        "1) VK_ACCESS_TOKEN (VK ID / VK developer settings, message permissions)",
+    )
+    _print_bi(
+        resolved_platform,
+        "2) VK_ALLOWED_PEERS (peer_id чата/диалога)",
+        "2) VK_ALLOWED_PEERS (chat/dialog peer_id)",
+    )
+    _print_bi(
+        resolved_platform,
+        "3) OPENCLAW_COMMAND (обычно openclaw или ./openclaw_agent_wrapper.sh)",
+        "3) OPENCLAW_COMMAND (usually openclaw or ./openclaw_agent_wrapper.sh)",
+    )
+    _print_bi(resolved_platform, "Документация: docs/vk_setup.md", "Docs: docs/vk_setup.md")
+    _print_bi(
+        resolved_platform,
+        "Безопасность: секреты пишутся только в .env.local и не коммитятся.",
+        "Security: secrets are written only to local .env.local and should never be committed.",
+    )
+    print()
 
-    print("ADMIN_API_TOKEN secures admin API endpoints.")
-    admin_input = getpass("ADMIN_API_TOKEN (Enter = auto-generate): ").strip()
+    _print_bi(
+        resolved_platform,
+        "ADMIN_API_TOKEN защищает admin API эндпоинты.",
+        "ADMIN_API_TOKEN secures admin API endpoints.",
+    )
+    admin_input = getpass(
+        _bi(
+            resolved_platform,
+            "ADMIN_API_TOKEN (Enter = сгенерировать автоматически): ",
+            "ADMIN_API_TOKEN (Enter = auto-generate): ",
+        )
+    ).strip()
     admin_token = admin_input or secrets.token_hex(32)
     if not admin_input:
-        print("ADMIN_API_TOKEN was auto-generated.")
+        _print_bi(
+            resolved_platform,
+            "ADMIN_API_TOKEN сгенерирован автоматически.",
+            "ADMIN_API_TOKEN was auto-generated.",
+        )
 
-    print("\nVK_ACCESS_TOKEN: create in VK app/community bot settings.")
-    vk_access_token = _prompt_non_empty("VK_ACCESS_TOKEN: ", secret_value=True)
+    print()
+    _print_bi(
+        resolved_platform,
+        "VK_ACCESS_TOKEN: получите в настройках приложения/сообщества VK.",
+        "VK_ACCESS_TOKEN: create in VK app/community bot settings.",
+    )
+    vk_access_token = _prompt_non_empty(
+        _bi(resolved_platform, "VK_ACCESS_TOKEN: ", "VK_ACCESS_TOKEN: "),
+        secret_value=True,
+    )
 
-    print("\nVK_ALLOWED_PEERS: peer_id for allowed dialog/chat, e.g. 2000000001 or 123456.")
-    vk_allowed_peers = _prompt_with_default("VK_ALLOWED_PEERS", source.get("VK_ALLOWED_PEERS", "42"))
+    print()
+    _print_bi(
+        resolved_platform,
+        "VK_ALLOWED_PEERS: peer_id разрешенного чата/диалога, например 2000000001 или 123456.",
+        "VK_ALLOWED_PEERS: peer_id for allowed dialog/chat, e.g. 2000000001 or 123456.",
+    )
+    vk_allowed_peers = _prompt_with_default(
+        _bi(resolved_platform, "VK_ALLOWED_PEERS", "VK_ALLOWED_PEERS"),
+        source.get("VK_ALLOWED_PEERS", "42"),
+    )
 
     mode_default = _normalize_mode(source.get("PERSISTENCE_MODE", "file"))
-    print("\nPERSISTENCE_MODE options: file, memory, database.")
-    mode = _prompt_with_default("PERSISTENCE_MODE", mode_default)
+    print()
+    _print_bi(
+        resolved_platform,
+        "Опции PERSISTENCE_MODE: file, memory, database.",
+        "PERSISTENCE_MODE options: file, memory, database.",
+    )
+    mode = _prompt_with_default(_bi(resolved_platform, "PERSISTENCE_MODE", "PERSISTENCE_MODE"), mode_default)
     mode = _normalize_mode(mode)
 
     database_dsn = ""
     redis_dsn = ""
     if mode == "database":
-        print("DATABASE_DSN example: postgresql://user:pass@localhost:5432/dbname")
-        database_dsn = _prompt_non_empty("DATABASE_DSN: ")
-        print("REDIS_DSN example: redis://localhost:6379/0")
-        redis_dsn = _prompt_non_empty("REDIS_DSN: ")
+        _print_bi(
+            resolved_platform,
+            "Пример DATABASE_DSN: postgresql://user:pass@localhost:5432/dbname",
+            "DATABASE_DSN example: postgresql://user:pass@localhost:5432/dbname",
+        )
+        database_dsn = _prompt_non_empty(_bi(resolved_platform, "DATABASE_DSN: ", "DATABASE_DSN: "))
+        _print_bi(
+            resolved_platform,
+            "Пример REDIS_DSN: redis://localhost:6379/0",
+            "REDIS_DSN example: redis://localhost:6379/0",
+        )
+        redis_dsn = _prompt_non_empty(_bi(resolved_platform, "REDIS_DSN: ", "REDIS_DSN: "))
 
-    print("\nOPENCLAW_COMMAND points to OpenClaw executable or wrapper script.")
-    openclaw_command = _prompt_with_default("OPENCLAW_COMMAND", _default_openclaw_command())
+    print()
+    _print_bi(
+        resolved_platform,
+        "OPENCLAW_COMMAND указывает на исполняемый файл OpenClaw или wrapper-скрипт.",
+        "OPENCLAW_COMMAND points to OpenClaw executable or wrapper script.",
+    )
+    openclaw_command = _prompt_with_default(
+        _bi(resolved_platform, "OPENCLAW_COMMAND", "OPENCLAW_COMMAND"),
+        _default_openclaw_command(),
+    )
 
     return InstallConfig(
         admin_api_token=admin_token,
@@ -511,19 +628,39 @@ def _http_json(url: str, *, method: str, payload: dict[str, object], bearer_toke
     return parsed
 
 
-def run_pairing_helper(config: InstallConfig) -> None:
+def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
     peer_id = _detect_primary_peer(config.vk_allowed_peers)
     if peer_id is None:
-        print("Pairing helper skipped: could not parse VK_ALLOWED_PEERS.")
+        _print_bi(
+            platform_name,
+            "Pairing helper пропущен: не удалось разобрать VK_ALLOWED_PEERS.",
+            "Pairing helper skipped: could not parse VK_ALLOWED_PEERS.",
+        )
         return
-    print("\nPairing helper")
-    print("It will request a pair code from local API and provide VK command instructions.")
-    proceed = input("Run pairing helper now? [Y/n]: ").strip().lower()
+    print()
+    _print_bi(platform_name, "Pairing helper", "Pairing helper")
+    _print_bi(
+        platform_name,
+        "Будет запрошен pair code из локального API и показана команда для VK.",
+        "It will request a pair code from local API and provide VK command instructions.",
+    )
+    proceed = input(_bi(platform_name, "Запустить pairing helper сейчас? [Y/n]: ", "Run pairing helper now? [Y/n]: "))
+    proceed = proceed.strip().lower()
     if proceed.startswith("n"):
-        print("Pairing helper skipped. You can run it later through API endpoints.")
+        _print_bi(
+            platform_name,
+            "Pairing helper пропущен. Можно запустить позже через API.",
+            "Pairing helper skipped. You can run it later through API endpoints.",
+        )
         return
 
-    base_url = input("API base URL [http://127.0.0.1:8000]: ").strip() or "http://127.0.0.1:8000"
+    base_url = input(
+        _bi(
+            platform_name,
+            "Базовый URL API [http://127.0.0.1:8000]: ",
+            "API base URL [http://127.0.0.1:8000]: ",
+        )
+    ).strip() or "http://127.0.0.1:8000"
     code_url = f"{base_url.rstrip('/')}/api/v1/pairing/code"
     verify_url = f"{base_url.rstrip('/')}/api/v1/pairing/verify"
     status_url = f"{base_url.rstrip('/')}/api/v1/status"
@@ -536,32 +673,53 @@ def run_pairing_helper(config: InstallConfig) -> None:
         )
         code = str(code_payload.get("code", "")).strip()
         if not code:
-            print("Could not read code from /pairing/code response.")
+            _print_bi(
+                platform_name,
+                "Не удалось прочитать код из ответа /pairing/code.",
+                "Could not read code from /pairing/code response.",
+            )
             return
-        print(f"Send this command in VK chat: /pair {code}")
-        input("Press Enter after sending /pair ...")
+        _print_bi(
+            platform_name,
+            f"Отправьте эту команду в VK чат: /pair {code}",
+            f"Send this command in VK chat: /pair {code}",
+        )
+        input(_bi(platform_name, "Нажмите Enter после отправки /pair ...", "Press Enter after sending /pair ..."))
         verify_payload = _http_json(
             verify_url,
             method="POST",
             payload={"peer_id": peer_id, "code": code},
             bearer_token=config.admin_api_token,
         )
-        print(f"Pair verify response: {verify_payload}")
+        _print_bi(
+            platform_name,
+            f"Ответ pair verify: {verify_payload}",
+            f"Pair verify response: {verify_payload}",
+        )
         status_payload = _http_json(
             status_url,
             method="GET",
             payload={},
             bearer_token=config.admin_api_token,
         )
-        print(f"Status snapshot: {status_payload}")
-        print("Pairing helper completed. Validate in VK: /status then /ask привет")
+        _print_bi(platform_name, f"Снимок статуса: {status_payload}", f"Status snapshot: {status_payload}")
+        _print_bi(
+            platform_name,
+            "Pairing helper завершен. Проверьте в VK: /status, затем /ask привет",
+            "Pairing helper completed. Validate in VK: /status then /ask привет",
+        )
     except (error.HTTPError, error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-        print(f"Pairing helper failed: {exc}")
-        print("You can continue manually with /api/v1/pairing/code and /api/v1/pairing/verify.")
+        _print_bi(platform_name, f"Ошибка pairing helper: {exc}", f"Pairing helper failed: {exc}")
+        _print_bi(
+            platform_name,
+            "Можно продолжить вручную через /api/v1/pairing/code и /api/v1/pairing/verify.",
+            "You can continue manually with /api/v1/pairing/code and /api/v1/pairing/verify.",
+        )
 
 
 def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool) -> int:
     platform_name = detect_platform()
+    print_author_info()
     if platform_name == "unsupported":
         print("Error: setup is supported only on Linux and Windows.")
         return 1
@@ -569,8 +727,12 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
     if platform_name == "linux":
         systemd_ok, systemd_reason = check_systemd_user_available()
         if not systemd_ok:
-            print("Error: systemd --user is unavailable.")
-            print(systemd_reason)
+            _print_bi(
+                platform_name,
+                "Ошибка: systemd --user недоступен.",
+                "Error: systemd --user is unavailable.",
+            )
+            print(_bi(platform_name, f"Причина: {systemd_reason}", systemd_reason))
             return 1
     if platform_name == "windows" and resolve_winsw_executable() is None and not dry_run:
         print("Error: WinSW is required on Windows. Set WINSW_PATH or provide tools/winsw/winsw.exe.")
@@ -578,12 +740,20 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 
     openclaw_ok, openclaw_reason = check_openclaw_installed()
     if not openclaw_ok:
-        print("Error: openclaw is not installed.")
-        print(openclaw_reason)
-        print("Install openclaw and verify with: openclaw --version")
+        _print_bi(platform_name, "Ошибка: openclaw не установлен.", "Error: openclaw is not installed.")
+        print(_bi(platform_name, f"Причина: {openclaw_reason}", openclaw_reason))
+        _print_bi(
+            platform_name,
+            "Установите openclaw и проверьте: openclaw --version",
+            "Install openclaw and verify with: openclaw --version",
+        )
         return 1
 
-    config = prompt_install_config(non_interactive=non_interactive, config_path=config_path)
+    config = prompt_install_config(
+        non_interactive=non_interactive,
+        config_path=config_path,
+        platform_name=platform_name,
+    )
     errors = validate_install_config(config)
     if errors:
         print("Config validation failed:")
@@ -593,16 +763,26 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 
     warnings = connectivity_warnings(config)
     if warnings:
-        print("Connectivity warnings:")
+        _print_bi(platform_name, "Предупреждения по подключению:", "Connectivity warnings:")
         for line in warnings:
             print(f"- {line}")
+
+    print(render_secret_confirmation(config, platform_name=platform_name))
 
     env_content = render_env_local(config, target_os=platform_name)
     workdir = Path.cwd()
     env_path = workdir / ".env.local"
     if dry_run:
-        print("Dry-run mode: no files or services were changed.")
-        print("Preview (.env.local redacted):")
+        _print_bi(
+            platform_name,
+            "Режим dry-run: файлы и сервисы не изменялись.",
+            "Dry-run mode: no files or services were changed.",
+        )
+        _print_bi(
+            platform_name,
+            "Предпросмотр (.env.local с редактированием секретов):",
+            "Preview (.env.local redacted):",
+        )
         print(redact_env_preview(env_content))
         return 0
 
@@ -618,21 +798,33 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
         print("Service installation failed.")
         return install_code
 
-    print("Setup completed.")
+    _print_bi(platform_name, "Установка завершена.", "Setup completed.")
     print(f"- Config file: {env_path}")
-    print("- Service mode: system-service")
+    print(_bi(platform_name, "- Режим сервиса: system-service", "- Service mode: system-service"))
 
     start_code = manage_service("start")
     if start_code != 0:
-        print("Warning: service start returned non-zero status.")
+        _print_bi(
+            platform_name,
+            "Предупреждение: запуск сервиса завершился с ненулевым статусом.",
+            "Warning: service start returned non-zero status.",
+        )
     status_code = manage_service("status")
     if status_code != 0:
-        print("Warning: service status returned non-zero status.")
+        _print_bi(
+            platform_name,
+            "Предупреждение: проверка статуса сервиса вернула ненулевой код.",
+            "Warning: service status returned non-zero status.",
+        )
     else:
-        print("Service status check passed.")
+        _print_bi(
+            platform_name,
+            "Проверка статуса сервиса пройдена.",
+            "Service status check passed.",
+        )
 
     if not non_interactive:
-        run_pairing_helper(config)
+        run_pairing_helper(config, platform_name=platform_name)
     return 0
 
 

@@ -51,6 +51,13 @@ vk-openclaw setup
 - `DATABASE_DSN` and `REDIS_DSN` (only in `database` mode)
 - `OPENCLAW_COMMAND`
 
+Linux wizard notes:
+- setup explanations are shown in RU/EN format (`RU / EN`)
+- secret input is hidden on purpose (no echo while typing)
+- setup prints safe confirmation:
+  - `ADMIN_API_TOKEN: SET (N chars)`
+  - `VK_ACCESS_TOKEN: SET (N chars)`
+
 It writes local `.env.local`, installs service mode, starts service, and runs status check.
 
 ## Service commands

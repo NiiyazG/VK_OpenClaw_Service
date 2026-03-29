@@ -58,6 +58,30 @@ def test_redact_env_preview_masks_sensitive_values() -> None:
     assert "VK_ALLOWED_PEERS=42" in preview
 
 
+def test_format_secret_status() -> None:
+    assert installer.format_secret_status("") == "EMPTY"
+    assert installer.format_secret_status("   ") == "EMPTY"
+    assert installer.format_secret_status("abcd") == "SET (4 chars)"
+
+
+def test_render_secret_confirmation_hides_values() -> None:
+    config = installer.InstallConfig(
+        admin_api_token="admin-secret",
+        vk_access_token="vk-secret",
+        vk_allowed_peers="42",
+        persistence_mode="file",
+        database_dsn="",
+        redis_dsn="",
+        openclaw_command="openclaw",
+    )
+    rendered = installer.render_secret_confirmation(config, platform_name="linux")
+    assert "admin-secret" not in rendered
+    assert "vk-secret" not in rendered
+    assert "SET (12 chars)" in rendered
+    assert "SET (9 chars)" in rendered
+    assert "Подтверждение секретов" in rendered
+
+
 def test_render_systemd_units_contains_execstart_and_envfile(tmp_path: Path) -> None:
     env_path = tmp_path / ".env.local"
     units = installer.render_systemd_units(
@@ -138,7 +162,7 @@ def test_run_setup_blocks_when_openclaw_missing(monkeypatch, capsys) -> None:
     assert "openclaw" in output.lower()
 
 
-def test_run_setup_dry_run_skips_writes_and_service_install(monkeypatch, tmp_path: Path) -> None:
+def test_run_setup_dry_run_skips_writes_and_service_install(monkeypatch, tmp_path: Path, capsys) -> None:
     workdir = tmp_path / "repo"
     workdir.mkdir()
     config_path = workdir / "install.json"
@@ -173,12 +197,22 @@ def test_run_setup_dry_run_skips_writes_and_service_install(monkeypatch, tmp_pat
     monkeypatch.setattr(installer, "install_service_files", fake_install)
 
     exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=True)
+    output = capsys.readouterr().out
     assert exit_code == 0
     assert called["write"] is False
     assert called["install"] is False
+    assert "SET (11 chars)" in output
+    assert "SET (8 chars)" in output
+    assert "admin-token" not in output
+    assert "vk-token" not in output
+    assert "Режим dry-run" in output
+    assert "Dry-run mode" in output
+    assert "Author: Гарипов Нияз Варисович февраль 2026" in output
+    assert "- Email: garipovn@yandex.ru" in output
+    assert "- License: MIT (`LICENSE`)" in output
 
 
-def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, monkeypatch) -> None:
+def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, monkeypatch, capsys) -> None:
     workdir = tmp_path / "repo"
     workdir.mkdir()
     config_path = workdir / "install.json"
@@ -210,6 +244,7 @@ def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, mo
     monkeypatch.setattr(installer.subprocess, "run", lambda *args, **kwargs: FakeProcess())
 
     exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    output = capsys.readouterr().out
 
     env_path = workdir / ".env.local"
     unit_dir = Path.home() / ".config" / "systemd" / "user"
@@ -217,6 +252,12 @@ def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, mo
     assert env_path.exists()
     assert (unit_dir / installer.SYSTEMD_UNIT_API).exists()
     assert (unit_dir / installer.SYSTEMD_UNIT_WORKER).exists()
+    assert "Подтверждение секретов" in output
+    assert "Secret confirmation" in output
+    assert "SET (11 chars)" in output
+    assert "SET (8 chars)" in output
+    assert "admin-token" not in output
+    assert "vk-token" not in output
 
 
 def test_run_setup_windows_requires_winsw(monkeypatch, capsys) -> None:
