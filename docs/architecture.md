@@ -219,3 +219,23 @@ Mandatory operational signals:
 - [x] DB migration plan included
 - [x] Security constraints documented
 - [ ] Human approval after architecture review
+
+## 12. Setup Architecture (Linux + Windows)
+- Primary entrypoint: `vk-openclaw setup`
+- Backward-compatible alias: `vk-openclaw install`
+- Setup phases:
+  1. `PrereqCheck` (platform, openclaw availability, service backend availability)
+  2. `GuidedConfig` (interactive/non-interactive config collection with VK hints)
+  3. `PersistConfig` (write `.env.local` with strict local-only handling)
+  4. `ServiceInstall` (Linux systemd user units or Windows WinSW wrapper)
+  5. `PostInstallVerify` (service start/status and pairing helper)
+- Service backend abstraction:
+  - Linux: `systemctl --user` for API/worker units
+  - Windows: WinSW-managed service wrapper
+- Security constraints:
+  - no plaintext secret echo in preview output
+  - redacted config preview in `--dry-run`
+  - local `.env.local` only, never committed
+- Packaging and one-command UX:
+  - Linux: `install.sh` and optional one-file binary build script
+  - Windows: `scripts/setup_windows.ps1` and optional one-file setup build script

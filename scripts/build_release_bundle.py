@@ -71,6 +71,11 @@ def main() -> int:
         Path("docs/verification_report.md"),
         Path("docs/operations_runbook.md"),
         Path("docs/wsl_onefile_install.md"),
+        Path("docs/windows_onefile_install.md"),
+        Path("docs/install.md"),
+        Path("docs/vk_setup.md"),
+        Path("install.sh"),
+        Path("scripts/setup_windows.ps1"),
     ]:
         src = root / relative
         included_files.append(copy_file(src, bundle_dir / relative))
@@ -99,6 +104,12 @@ def main() -> int:
         primary_files.append("- `dist/vk-openclaw.sha256`")
     if (dist_dir / "vk-openclaw-install-guide.md").exists():
         primary_files.append("- `dist/vk-openclaw-install-guide.md`")
+    if (dist_dir / "vk-openclaw-setup.exe").exists():
+        primary_files.append("- `dist/vk-openclaw-setup.exe` (Windows one-file binary)")
+    if (dist_dir / "vk-openclaw-setup.exe.sha256").exists():
+        primary_files.append("- `dist/vk-openclaw-setup.exe.sha256`")
+    if (dist_dir / "setup_windows.ps1").exists():
+        primary_files.append("- `dist/setup_windows.ps1`")
 
     handoff_lines = [
         "# Release Handoff Bundle",
@@ -109,9 +120,9 @@ def main() -> int:
         "",
         "## Included Groups",
         "- `verify_reports/`: JSON summary, markdown summary, distribution checksums",
-        "- `dist/`: wheel, source distribution, and optional Linux one-file artifacts",
-        "- `docs/`: release notes, checklist, verification report, operations runbook, WSL one-file guide",
-        "- root docs: `README.md`, `CONTRIBUTING.md`, `pyproject.toml`",
+        "- `dist/`: wheel, source distribution, and optional Linux/Windows one-file artifacts",
+        "- `docs/`: release notes, checklist, verification report, operations runbook, install and one-file guides",
+        "- root docs/scripts: `README.md`, `CONTRIBUTING.md`, `pyproject.toml`, `install.sh`, `scripts/setup_windows.ps1`",
         "",
         "## Primary Files",
         *primary_files,

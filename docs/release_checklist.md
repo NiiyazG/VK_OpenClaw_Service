@@ -55,6 +55,10 @@ Freeze and verify a release-candidate state for `vk-openclaw-service`.
 5. `vk-openclaw-worker --once`
 6. If `FREE_TEXT_ASK_ENABLED=true`, verify free-text handling after pairing and slash-command priority.
 7. If `OPENCLAW_COMMAND=./openclaw_agent_wrapper.sh`, confirm wrapper exists and is executable.
+8. `vk-openclaw setup --dry-run` renders redacted preview (no secret leakage).
+9. Linux one-command path works: `./install.sh`.
+10. Windows one-command path works: `powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1`.
+11. Windows service prerequisites are present (`winsw.exe` path or `WINSW_PATH`).
 
 ## Release Decision
 Mark the release as ready only when:

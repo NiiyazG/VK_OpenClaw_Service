@@ -1,7 +1,21 @@
 # Release Notes: vk-openclaw-service v0.0.1
 
 ## Date
-2026-03-17
+2026-03-29
+
+## Installer UX Update (777NC execution)
+- Added cross-platform `vk-openclaw setup` wizard with `install` as backward-compatible alias.
+- Added `--dry-run` for safe config preview with redaction.
+- Added platform-aware service backend abstraction:
+  - Linux: `systemd --user`
+  - Windows: WinSW wrapper
+- Added guided VK onboarding prompts for token/peer setup and pairing flow.
+- Added post-setup pairing helper with API-assisted code/verify workflow.
+- Added one-command bootstrap scripts:
+  - `install.sh` (Linux)
+  - `scripts/setup_windows.ps1` (Windows)
+- Added one-file Windows build helper: `scripts/build_onefile_windows.py`
+- Added Windows one-file install guide: `docs/windows_onefile_install.md`
 
 ## Included in This Release State
 - FastAPI admin/runtime surface with:

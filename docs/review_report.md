@@ -8,21 +8,21 @@
 Критических проблем после повторной проверки не обнаружено.
 
 ### Важные
-1. **Проблема**: rollout описан decision-complete, но перед началом реализации нужно удерживать parity с согласованным v1 command set.
-   **Где**: `docs/architecture.md`, раздел `10. Deployment and Rollout`
-   **Решение**: в TDD backlog первым блоком зафиксировать тесты на `/help`, `/status`, `/pair`, `/ask` и сценарии отказа по вложениям.
+1. **Проблема**: Windows service режим добавлен через WinSW wrapper, но для прод-сборки нужно закрепить конкретный путь поставки `winsw.exe`.
+   **Где**: `src/vk_openclaw_service/installer.py`, `docs/windows_onefile_install.md`
+   **Решение**: включить `winsw.exe` в релизный bundle и добавить checksum/pinning в release pipeline.
 
-2. **Проблема**: token rotation metadata помечена как optional, что допустимо, но разработчик не должен смешать это с обязательной auth policy.
-   **Где**: `docs/architecture.md`, разделы `5. API Contracts`, `6. Data and State`
-   **Решение**: в реализации считать `Bearer ADMIN_API_TOKEN` обязательным, а `admin_token_metadata` необязательным расширением без влияния на основной auth flow.
+2. **Проблема**: pairing helper зависит от доступности API сразу после setup.
+   **Где**: `src/vk_openclaw_service/installer.py`
+   **Решение**: оставить helper best-effort, а в docs явно указать ручной fallback через `/api/v1/pairing/code` и `/api/v1/pairing/verify`.
 
 ## Вопросы к пользователю
 1. Архитектура приведена в состояние, пригодное для реализации. Дополнительных блокирующих вопросов нет.
 
 ## Рекомендации
-1. Начать TDD с самых рискованных модулей: checkpoint processing, VK transport failures, pairing, attachment validation.
+1. На следующем шаге добавить integration smoke для Windows backend (mock WinSW install/start/status).
 2. Держать `docs/progress.md` и `docs/context_summary.md` в актуальном состоянии после каждого модуля, как требует инструкция.
-3. Не расширять scope первого релиза beyond VK-to-OpenClaw bridge и internal admin API.
+3. Не расширять scope beyond setup UX и service orchestration в текущей итерации.
 
 ## Итоговое решение
 - [x] УТВЕРДИТЬ ПЛАН

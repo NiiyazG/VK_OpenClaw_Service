@@ -1,8 +1,21 @@
 # Verification Report: vk-openclaw-service
 
-## Status: PASS
+## Status: PARTIAL
 
 ## Current Verified State
+- CLI now supports `vk-openclaw setup` as the main installer command, with `install` kept as alias.
+- Installer is now cross-platform at architecture level (Linux `systemd --user`, Windows WinSW backend).
+- Guided setup prompts now include VK-specific onboarding hints and post-setup pairing helper flow.
+- Added one-command bootstrap scripts:
+  - `install.sh` (Linux)
+  - `scripts/setup_windows.ps1` (Windows)
+- Added one-file Windows build helper:
+  - `scripts/build_onefile_windows.py`
+- Updated release bundle script to include Linux/Windows installer assets and setup docs.
+- Updated docs for new setup path:
+  - `docs/install.md`
+  - `docs/vk_setup.md`
+  - `docs/windows_onefile_install.md`
 - A repo-local release verification helper now exists at `scripts/verify_release.ps1`; it runs full `pytest` via `scripts/run_pytest_safe.ps1` and then static verification via `scripts/verify_static.ps1`.
 - Each combined verification run now refreshes `.verify_reports/release_summary.json` with a machine-readable gate snapshot.
 - Each combined verification run now also refreshes `.verify_reports/release_summary.md` and `.verify_reports/distribution_checksums.txt` for release handoff.
@@ -40,7 +53,10 @@
 - The latest full run completed successfully with `205 passed`.
 
 ## Last Known Strong Signal
-- The latest confirmed full test run reached `205 passed`.
+- Targeted setup test run reached `19 passed`:
+  - `tests/unit/test_cli.py`
+  - `tests/unit/test_installer.py`
+- Full current unit suite run reached `228 passed`.
 - The latest static verification run also confirmed `compileall`, `ruff`, `mypy`, and `bandit`.
 - The latest packaging verification run also produced `vk_openclaw_service-0.0.1-py3-none-any.whl`.
 - The latest source-distribution verification run also produced `vk_openclaw_service-0.0.1.tar.gz`.
@@ -57,10 +73,10 @@
 
 ## Summary
 - The codebase is materially more complete than the earlier verification snapshot that covered only the initial runtime.
-- Static verification for the latest increments is good.
-- Full dynamic verification is green in the current environment.
+- Setup/installer target verification is green.
+- Full dynamic verification for the entire repo still needs a refreshed run after this change set.
 
 ## Final Decision
-- [ ] PARTIAL
-- [x] PASS
+- [x] PARTIAL
+- [ ] PASS
 - [ ] FAIL

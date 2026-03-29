@@ -7,28 +7,36 @@ from unittest.mock import patch
 from vk_openclaw_service.cli import main
 
 
-def test_cli_install_dispatches_to_installer() -> None:
-    with patch("vk_openclaw_service.cli.installer.run_install", return_value=0) as install_mock:
+def test_cli_setup_dispatches_to_installer() -> None:
+    with patch("vk_openclaw_service.cli.installer.run_setup", return_value=0) as setup_mock:
+        exit_code = main(["setup", "--non-interactive", "--dry-run"])
+
+    assert exit_code == 0
+    setup_mock.assert_called_once()
+
+
+def test_cli_install_alias_dispatches_to_setup() -> None:
+    with patch("vk_openclaw_service.cli.installer.run_setup", return_value=0) as setup_mock:
         exit_code = main(["install", "--non-interactive"])
 
     assert exit_code == 0
-    install_mock.assert_called_once()
+    setup_mock.assert_called_once()
 
 
-def test_cli_start_dispatches_to_systemd_start() -> None:
-    with patch("vk_openclaw_service.cli.installer.systemd_user", return_value=0) as command_mock:
+def test_cli_start_dispatches_to_service_backend() -> None:
+    with patch("vk_openclaw_service.cli.installer.manage_service", return_value=0) as command_mock:
         exit_code = main(["start"])
 
     assert exit_code == 0
     command_mock.assert_called_once_with("start")
 
 
-def test_cli_status_dispatches_to_systemd_status() -> None:
-    with patch("vk_openclaw_service.cli.installer.systemd_user_status", return_value=0) as status_mock:
+def test_cli_status_dispatches_to_service_backend() -> None:
+    with patch("vk_openclaw_service.cli.installer.manage_service", return_value=0) as status_mock:
         exit_code = main(["status"])
 
     assert exit_code == 0
-    status_mock.assert_called_once_with()
+    status_mock.assert_called_once_with("status")
 
 
 def test_cli_run_worker_forwards_flags() -> None:

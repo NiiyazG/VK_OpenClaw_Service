@@ -13,7 +13,7 @@ The service receives VK messages, runs OpenClaw commands, sends results back to 
 - Config validation endpoint before runtime rollout.
 - Audit and dead-letter endpoints for operations visibility.
 - Optional PostgreSQL + Redis runtime mode.
-- CLI installer flow for WSL (`vk-openclaw install`).
+- Cross-platform setup wizard (`vk-openclaw setup`) for Linux and Windows.
 
 ## Quick Start / Быстрый старт
 Detailed platform commands are in `docs/install.md`.
@@ -25,31 +25,22 @@ cd VK_OpenClaw_Service
 ls pyproject.toml
 ```
 
-Linux (bash):
+Linux one-command setup:
 ```bash
-sudo apt update
-sudo apt install -y python3-venv python3-pip
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e .
-cp .env.example .env
-uvicorn vk_openclaw_service.main:app --reload
+chmod +x ./install.sh
+./install.sh
 ```
 
-Windows (PowerShell):
+Windows one-command setup (PowerShell):
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .
-Copy-Item .env.example .env
-uvicorn vk_openclaw_service.main:app --reload
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
 ```
 
-Run worker / Запуск воркера:
+Service control / Управление сервисом:
 ```bash
-vk-openclaw-worker --once
+vk-openclaw start
+vk-openclaw status
+vk-openclaw stop
 ```
 ## Configuration / Конфигурация
 Required runtime variables (minimum):
@@ -79,6 +70,7 @@ Public repository safety checklist:
 - Operations runbook: `docs/operations_runbook.md`
 - Contributor guide: `CONTRIBUTING.md`
 - Installation guide: `docs/install.md`
+- Windows one-file guide: `docs/windows_onefile_install.md`
 
 ## Author & License / Автор и лицензия
 - Author: Гарипов Нияз Варисович

@@ -13,13 +13,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vk-openclaw")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    install_parser = subparsers.add_parser("install", help="Interactive WSL installer")
-    install_parser.add_argument("--non-interactive", action="store_true", help="Run install without prompts")
-    install_parser.add_argument("--config", type=Path, default=None, help="Path to JSON config for install")
+    setup_parser = subparsers.add_parser("setup", help="Cross-platform guided installer")
+    setup_parser.add_argument("--non-interactive", action="store_true", help="Run setup without prompts")
+    setup_parser.add_argument("--config", type=Path, default=None, help="Path to JSON config for setup")
+    setup_parser.add_argument("--dry-run", action="store_true", help="Validate and preview setup without writes")
+    # Backward-compatible alias for earlier releases.
+    install_parser = subparsers.add_parser("install", help="Alias for setup")
+    install_parser.add_argument("--non-interactive", action="store_true", help="Run setup without prompts")
+    install_parser.add_argument("--config", type=Path, default=None, help="Path to JSON config for setup")
+    install_parser.add_argument("--dry-run", action="store_true", help="Validate and preview setup without writes")
 
     subparsers.add_parser("start", help="Start systemd user services")
     subparsers.add_parser("stop", help="Stop systemd user services")
-    subparsers.add_parser("status", help="Show systemd user service status")
+    subparsers.add_parser("status", help="Show service status")
 
     run_api_parser = subparsers.add_parser("run-api", help="Run API process")
     run_api_parser.add_argument("--host", default="127.0.0.1")
@@ -51,14 +57,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    if args.command == "install":
-        return installer.run_install(non_interactive=args.non_interactive, config_path=args.config)
+    if args.command in {"setup", "install"}:
+        return installer.run_setup(
+            non_interactive=args.non_interactive,
+            config_path=args.config,
+            dry_run=args.dry_run,
+        )
     if args.command == "start":
-        return installer.systemd_user("start")
+        return installer.manage_service("start")
     if args.command == "stop":
-        return installer.systemd_user("stop")
+        return installer.manage_service("stop")
     if args.command == "status":
-        return installer.systemd_user_status()
+        return installer.manage_service("status")
     if args.command == "run-api":
         uvicorn = importlib.import_module("uvicorn")
         uvicorn.run("vk_openclaw_service.main:app", host=args.host, port=args.port)

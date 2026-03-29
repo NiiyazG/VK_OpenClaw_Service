@@ -1,103 +1,83 @@
 # Installation Guide (Linux + Windows)
 
-## Requirements
+## Goal
+User should start setup with one command or one click, then follow guided prompts for VK data.
+
+## Required software
 - Python 3.12+
 - pip
 - Git
+- OpenClaw CLI (`openclaw --version`)
 
-## Linux (bash)
+## One-command setup (Linux)
 ```bash
 git clone <your-public-repo-url>
 cd vk-openclaw-service
+chmod +x ./install.sh
+./install.sh
+```
+
+Alternative manual:
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
-python -m pip install ruff mypy bandit pip-audit pytest
-cp .env.example .env
+vk-openclaw setup
 ```
 
-Run service:
-```bash
-uvicorn vk_openclaw_service.main:app --reload
-```
-
-Run worker:
-```bash
-vk-openclaw-worker --once
-```
-
-## Windows PowerShell
+## One-command setup (Windows PowerShell)
 ```powershell
 git clone <your-public-repo-url>
 cd vk-openclaw-service
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
+```
+
+Alternative manual:
+```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e .
-python -m pip install ruff mypy bandit pip-audit pytest
-Copy-Item .env.example .env
+vk-openclaw setup
 ```
 
-Run service:
-```powershell
-uvicorn vk_openclaw_service.main:app --reload
-```
-
-Run worker:
-```powershell
-vk-openclaw-worker --once
-```
-
-## Windows CMD
-```cmd
-git clone <your-public-repo-url>
-cd vk-openclaw-service
-py -3.12 -m venv .venv
-.venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-python -m pip install -e .
-python -m pip install ruff mypy bandit pip-audit pytest
-copy .env.example .env
-```
-
-Run service:
-```cmd
-uvicorn vk_openclaw_service.main:app --reload
-```
-
-Run worker:
-```cmd
-vk-openclaw-worker --once
-```
-
-## Required runtime variables
-Set real values in local `.env` only:
-- `ADMIN_API_TOKEN`
+## Guided setup behavior
+`vk-openclaw setup` asks for:
+- `ADMIN_API_TOKEN` (Enter for auto-generate)
 - `VK_ACCESS_TOKEN`
 - `VK_ALLOWED_PEERS`
+- `PERSISTENCE_MODE` (`file|memory|database`)
+- `DATABASE_DSN` and `REDIS_DSN` (only in `database` mode)
 - `OPENCLAW_COMMAND`
 
-VK token/peer setup details:
-- `docs/vk_setup.md`
+It writes local `.env.local`, installs service mode, starts service, and runs status check.
 
-## Verification
-Linux/macOS:
+## Service commands
 ```bash
-pytest tests/unit
+vk-openclaw start
+vk-openclaw status
+vk-openclaw stop
 ```
 
-Windows PowerShell:
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_pytest_safe.ps1 -q
-```
+## Pairing helper (post-setup)
+Interactive setup offers pairing helper:
+- requests pair code from API
+- tells user to run `/pair <code>` in VK
+- verifies pairing and suggests `/status` and `/ask`
 
-## Interactive installer (WSL)
-`vk-openclaw install` now asks for required values during setup:
-- `ADMIN_API_TOKEN` (auto-generate on Enter)
-- `VK_ACCESS_TOKEN`
-- `VK_ALLOWED_PEERS` (peer_id)
-- `PERSISTENCE_MODE` (+ `DATABASE_DSN` and `REDIS_DSN` for `database` mode)
-- `OPENCLAW_COMMAND`
+## Troubleshooting
+1. Invalid VK token:
+- rotate token in VK settings and run `vk-openclaw setup` again.
 
-The installer shows short hints for each critical field and writes secrets to `.env.local`.
+2. Wrong `peer_id`:
+- resolve peer via VK API/logs, update `VK_ALLOWED_PEERS`, rerun setup.
+
+3. Linux service issue:
+- ensure `systemd --user` is available and active.
+
+4. Windows service issue:
+- provide `winsw.exe` (`tools/winsw/winsw.exe`) or set `WINSW_PATH`.
+
+5. DNS/network issue:
+- retry after network recovery; database checks are warnings unless mode requires connectivity.
