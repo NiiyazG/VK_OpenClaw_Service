@@ -893,8 +893,21 @@ def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
         )
 
 
+def render_local_fallback_commands(*, working_directory: Path) -> list[str]:
+    wd = shlex.quote(str(working_directory))
+    return [
+        f"cd {wd}",
+        "source .venv/bin/activate",
+        "set -a && source .env.local && set +a",
+        "nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &",
+        "nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &",
+        "tail -n 60 /tmp/vk_worker.log",
+    ]
+
+
 def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool) -> int:
     platform_name = detect_platform()
+    service_mode = "system-service"
     print_author_info()
     if platform_name == "unsupported":
         print("Error: setup is supported only on Linux and Windows.")
@@ -905,11 +918,11 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
         if not systemd_ok:
             _print_bi(
                 platform_name,
-                "Ошибка: systemd --user недоступен.",
-                "Error: systemd --user is unavailable.",
+                "Предупреждение: systemd --user недоступен, используем fallback-local режим.",
+                "Warning: systemd --user is unavailable, using fallback-local mode.",
             )
-            print(_bi(platform_name, f"Причина: {systemd_reason}", systemd_reason))
-            return 1
+            print(_bi(platform_name, f"Причина: {systemd_reason}", f"Reason: {systemd_reason}"))
+            service_mode = "fallback-local"
     if platform_name == "windows" and resolve_winsw_executable() is None and not dry_run:
         print("Error: WinSW is required on Windows. Set WINSW_PATH or provide tools/winsw/winsw.exe.")
         return 1
@@ -994,50 +1007,72 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
                 f"Warning: failed to mark wrapper executable: {exc}",
             )
 
-    install_code = install_service_files(
-        platform_name=platform_name,
-        working_directory=workdir,
-        env_path=env_path,
-        cli_executable=resolve_cli_executable(),
-    )
-    if install_code != 0:
-        print("Service installation failed.")
-        return install_code
+    if service_mode == "system-service":
+        install_code = install_service_files(
+            platform_name=platform_name,
+            working_directory=workdir,
+            env_path=env_path,
+            cli_executable=resolve_cli_executable(),
+        )
+        if install_code != 0:
+            print("Service installation failed.")
+            return install_code
+        _print_bi(platform_name, "Установка завершена.", "Setup completed.")
+        print(f"- Config file: {env_path}")
+        print(_bi(platform_name, f"- Режим сервиса: {service_mode}", f"- Service mode: {service_mode}"))
 
-    _print_bi(platform_name, "Установка завершена.", "Setup completed.")
-    print(f"- Config file: {env_path}")
-    print(_bi(platform_name, "- Режим сервиса: system-service", "- Service mode: system-service"))
+        start_code = manage_service("restart")
+        if start_code != 0:
+            _print_bi(
+                platform_name,
+                "Предупреждение: restart вернул ненулевой код, пробуем start.",
+                "Warning: service restart returned non-zero status, trying start.",
+            )
+            start_code = manage_service("start")
+        if start_code != 0:
+            _print_bi(
+                platform_name,
+                "Предупреждение: запуск сервиса завершился с ненулевым статусом.",
+                "Warning: service start returned non-zero status.",
+            )
+        status_code = manage_service("status")
+        if status_code != 0:
+            _print_bi(
+                platform_name,
+                "Предупреждение: проверка статуса сервиса вернула ненулевой код.",
+                "Warning: service status returned non-zero status.",
+            )
+        else:
+            _print_bi(
+                platform_name,
+                "Проверка статуса сервиса пройдена.",
+                "Service status check passed.",
+            )
 
-    start_code = manage_service("restart")
-    if start_code != 0:
-        _print_bi(
-            platform_name,
-            "Предупреждение: restart вернул ненулевой код, пробуем start.",
-            "Warning: service restart returned non-zero status, trying start.",
-        )
-        start_code = manage_service("start")
-    if start_code != 0:
-        _print_bi(
-            platform_name,
-            "Предупреждение: запуск сервиса завершился с ненулевым статусом.",
-            "Warning: service start returned non-zero status.",
-        )
-    status_code = manage_service("status")
-    if status_code != 0:
-        _print_bi(
-            platform_name,
-            "Предупреждение: проверка статуса сервиса вернула ненулевой код.",
-            "Warning: service status returned non-zero status.",
-        )
+        if not non_interactive:
+            run_pairing_helper(config, platform_name=platform_name)
     else:
+        _print_bi(platform_name, "Установка завершена.", "Setup completed.")
+        print(f"- Config file: {env_path}")
+        print(_bi(platform_name, f"- Режим сервиса: {service_mode}", f"- Service mode: {service_mode}"))
         _print_bi(
             platform_name,
-            "Проверка статуса сервиса пройдена.",
-            "Service status check passed.",
+            "Сервисы не установлены в systemd. Используйте локальный fallback-запуск ниже.",
+            "Services were not installed in systemd. Use local fallback commands below.",
         )
-
-    if not non_interactive:
-        run_pairing_helper(config, platform_name=platform_name)
+        _print_bi(
+            platform_name,
+            "Важно: сначала загрузите .env.local (иначе worker завершится с VK API error 15: token required).",
+            "Important: load .env.local first (otherwise worker may fail with VK API error 15: token required).",
+        )
+        _print_bi(platform_name, "Команды fallback-local:", "Fallback-local commands:")
+        for line in render_local_fallback_commands(working_directory=workdir):
+            print(f"  {line}")
+        _print_bi(
+            platform_name,
+            "Проверка в VK после запуска: /status, затем /ask привет.",
+            "After launching, validate in VK: /status, then /ask hello.",
+        )
 
     _print_bi(platform_name, "Где взять токены позже:", "Where to find tokens later:")
     print(f"- .env.local: {env_path}")

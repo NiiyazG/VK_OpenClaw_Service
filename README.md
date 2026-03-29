@@ -31,6 +31,8 @@ chmod +x ./install.sh
 ./install.sh
 ```
 
+If `systemd --user` is unavailable during setup, installer now switches to `fallback-local` automatically and prints ready-to-run local commands.
+
 If first setup failed (clean reinstall, Linux):
 ```bash
 systemctl --user stop vk-openclaw-api.service vk-openclaw-worker.service 2>/dev/null || true
@@ -90,7 +92,7 @@ Or run directly:
 ./.venv/bin/vk-openclaw status
 ```
 
-If `systemctl --user` is unavailable (`Failed to connect to bus`), run fallback mode:
+If `systemctl --user` is unavailable (`Failed to connect to bus`), use fallback mode:
 ```bash
 cd ~/VK_OpenClaw_Service
 source .venv/bin/activate

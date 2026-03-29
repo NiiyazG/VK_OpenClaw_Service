@@ -365,6 +365,52 @@ def test_run_setup_windows_requires_winsw(monkeypatch, capsys) -> None:
     assert "winsw" in output.lower()
 
 
+def test_run_setup_linux_without_systemd_uses_fallback_local(monkeypatch, tmp_path: Path, capsys) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    config_path = workdir / "install.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ADMIN_API_TOKEN": "admin-token",
+                "VK_ACCESS_TOKEN": "vk-token",
+                "VK_ALLOWED_PEERS": "42",
+                "PERSISTENCE_MODE": "file",
+                "OPENCLAW_COMMAND": "openclaw",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (False, "Failed to connect to bus"))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
+
+    calls = {"install": 0, "manage": 0}
+
+    def fake_install(*args, **kwargs) -> int:
+        calls["install"] += 1
+        return 0
+
+    def fake_manage(command: str) -> int:
+        calls["manage"] += 1
+        return 0
+
+    monkeypatch.setattr(installer, "install_service_files", fake_install)
+    monkeypatch.setattr(installer, "manage_service", fake_manage)
+
+    exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert calls["install"] == 0
+    assert calls["manage"] == 0
+    assert "fallback-local" in output
+    assert "set -a && source .env.local && set +a" in output
+    assert "token required" in output.lower()
+
+
 def test_manage_service_linux_uses_systemd(monkeypatch) -> None:
     monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
 

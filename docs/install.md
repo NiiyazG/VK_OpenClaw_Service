@@ -65,8 +65,9 @@ Linux wizard notes:
 - installer validates `VK_ACCESS_TOKEN` via VK API preflight before service start
 - if `openclaw_agent_wrapper.sh` exists, installer marks it executable automatically
 
-It writes local `.env.local`, installs service mode, starts service, and runs status check.
-It writes local `.env.local`, installs service mode, restarts service (fallback: start), and runs status check.
+It writes local `.env.local` in all modes.
+- If `systemd --user` is available: installs system service, restarts service (fallback: start), and runs status check.
+- If `systemd --user` is unavailable: switches to `fallback-local` automatically and prints local launch commands.
 
 VK token source:
 1. Create/open VK community.
