@@ -7,39 +7,33 @@
 vk-openclaw setup
 ```
 
-Подсказки мастера в Linux выводятся на двух языках: `RU / EN`.
-Ввод секретов скрыт в терминале и это нормально.
-Если вставка в hidden-режиме не работает, выберите режим `paste-visible`.
+В Linux мастер печатает подсказки в формате `RU / EN`.
 
-Мастер попросит:
-- `VK_ACCESS_TOKEN`
-- `VK_ALLOWED_PEERS`
-- `ADMIN_API_TOKEN`
+Интерактивный setup запрашивает:
+- `VK_ACCESS_TOKEN` (открытый copy/paste ввод),
+- `VK_ALLOWED_PEERS`.
 
-После ввода мастер безопасно подтверждает:
-```text
-ADMIN_API_TOKEN: SET (64 chars), fingerprint: 91d4e4be2c31
-VK_ACCESS_TOKEN: SET (123 chars), fingerprint: 4cf641f0d5a8
-```
-`SET (N chars)` значит значение сохранено, но не показывается.
-
-Если `ADMIN_API_TOKEN` был сгенерирован автоматически, мастер показывает его один раз и просит сохранить.
-Позже токен можно найти в `.env.local` в каталоге проекта.
+И автоматически задает:
+- `ADMIN_API_TOKEN` (генерируется и показывается один раз),
+- `PERSISTENCE_MODE=file`,
+- `OPENCLAW_COMMAND` (wrapper/local default),
+- `FREE_TEXT_ASK_ENABLED=true`.
 
 ### 1. Как получить `VK_ACCESS_TOKEN`
-1. Откройте VK Developer / VK ID настройки приложения или сообщества.
-2. Создайте токен с правами на чтение и отправку сообщений.
-3. Храните токен только локально (`.env.local`), не коммитьте в git.
+1. Создайте или откройте сообщество VK.
+2. Перейдите: `Управление -> Дополнительно -> Работа с API`.
+3. Нажмите `Создать ключ`.
+4. Полученный ключ используйте как `VK_ACCESS_TOKEN`.
+5. Храните токен только локально в `.env.local`.
 
 Пример:
 ```env
 VK_ACCESS_TOKEN=vk1.a.real_token_value
 ```
 
-### 2. Как получить `VK_ALLOWED_PEERS` (peer_id)
-Варианты:
-- взять из worker логов после тестового сообщения;
-- через VK API (`messages.getConversations`, `messages.getHistory`).
+### 2. Как получить `VK_ALLOWED_PEERS`
+- Для ЛС укажите ID пользователя.
+- Для беседы укажите `peer_id`.
 
 Пример:
 ```env
@@ -47,49 +41,56 @@ VK_ALLOWED_PEERS=123456789
 ```
 
 ### 3. Pairing после setup
-После установки мастер предлагает pairing helper:
-1. Генерирует pair-code через API.
-2. Если в `VK_ALLOWED_PEERS` несколько peer_id, запрашивает `PAIRING_PEER_ID`.
-3. Показывает команду для VK: `/pair <code>`.
-4. Ждет подтверждение pairing через список paired peers (до ~15 секунд) и рекомендует проверить `/status` и `/ask`.
+1. Setup helper запрашивает pair code.
+2. Если в `VK_ALLOWED_PEERS` несколько peer_id, helper просит `PAIRING_PEER_ID`.
+3. Отправьте в VK: `/pair <code>`.
+4. Helper проверяет, что peer появился в `GET /api/v1/pairing/peers`.
+5. После pairing проверьте `/status`, затем `/ask привет`.
 
-Если helper пропущен:
-- вручную вызовите `POST /api/v1/pairing/code`,
-- отправьте `/pair <code>` в VK,
-- убедитесь, что peer появился в `GET /api/v1/pairing/peers`.
+### 4. Частые проблемы
+1. `token required` / `Access denied`:
+- проверьте `VK_ACCESS_TOKEN` и права ключа.
 
-### 4. Частые ошибки
-1. `token required` или `Unauthorized`:
-- токен пустой/невалидный, перевыпустите его в VK.
+2. `/ask` не отвечает:
+- проверьте, что peer paired;
+- проверьте worker логи.
 
-2. `/help` работает, но `/ask` не работает:
-- peer не paired, завершите pairing flow.
+3. `Temporary failure in name resolution`:
+- нестабильный DNS (часто WSL);
+- примените DNS fix из `README.md` / `docs/install.md`.
 
-3. Неверный `peer_id`:
-- обновите `VK_ALLOWED_PEERS` и перезапустите setup.
+4. `Failed to connect to bus`:
+- `systemd --user` недоступен в текущей сессии;
+- используйте fallback запуск из `docs/install.md`.
 
-## EN: what to provide to setup wizard
+## EN: setup values and flow
 
 Run:
 ```bash
 vk-openclaw setup
 ```
 
-Required values:
-- `VK_ACCESS_TOKEN`
-- `VK_ALLOWED_PEERS`
-- `ADMIN_API_TOKEN` (auto-generate is supported)
+Interactive setup asks for:
+- `VK_ACCESS_TOKEN` (visible paste input),
+- `VK_ALLOWED_PEERS`.
+
+Setup auto-configures:
+- `ADMIN_API_TOKEN` (auto-generated),
+- `PERSISTENCE_MODE=file`,
+- `OPENCLAW_COMMAND` (wrapper/local default),
+- `FREE_TEXT_ASK_ENABLED=true`.
 
 Recommended flow:
-1. Generate VK token with messaging permissions.
-2. Resolve `peer_id` from logs or VK API.
-3. Complete guided pairing helper.
-4. Confirm VK commands: `/status` then `/ask ...`.
+1. Create VK community API key:
+   `Manage -> Advanced -> API access -> Create key`.
+2. Set correct peer id (DM user id or chat peer_id).
+3. Complete pairing helper.
+4. Validate in VK: `/status`, then `/ask hello`.
 
 Pairing is VK-first:
-- the code is verified when worker receives `/pair <code>` from VK,
-- setup helper validates pairing by checking `GET /api/v1/pairing/peers`.
+- worker verifies `/pair <code>` from VK,
+- helper confirms pairing using `GET /api/v1/pairing/peers`.
 
-## Security notes
-- Never commit `.env`, `.env.local`, access tokens, passwords, DSN credentials, or private keys.
-- If any token is exposed, rotate it immediately and invalidate old credentials.
+Security notes:
+- never commit `.env` / `.env.local`,
+- rotate token immediately if exposed.

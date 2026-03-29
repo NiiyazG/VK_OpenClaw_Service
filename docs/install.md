@@ -44,12 +44,13 @@ vk-openclaw setup
 
 ## Guided setup behavior
 `vk-openclaw setup` asks for:
-- `ADMIN_API_TOKEN` (Enter for auto-generate)
-- `VK_ACCESS_TOKEN`
+- `VK_ACCESS_TOKEN` (visible paste input)
 - `VK_ALLOWED_PEERS`
 - then applies defaults automatically:
+  - `ADMIN_API_TOKEN` auto-generated and shown once
   - `PERSISTENCE_MODE=file`
   - `OPENCLAW_COMMAND` resolved from local wrapper or `openclaw`
+  - `FREE_TEXT_ASK_ENABLED=true`
 
 Advanced mode selection is still available via non-interactive config:
 ```bash
@@ -58,15 +59,24 @@ vk-openclaw setup --non-interactive --config install.json
 
 Linux wizard notes:
 - setup explanations are shown in RU/EN format (`RU / EN`)
-- secret input is hidden on purpose (no echo while typing)
-- if paste fails in hidden mode, switch secret input mode to `paste-visible`
 - setup prints safe confirmation:
   - `ADMIN_API_TOKEN: SET (N chars), fingerprint: xxxxxxxxxxxx`
   - `VK_ACCESS_TOKEN: SET (N chars), fingerprint: xxxxxxxxxxxx`
-- if `ADMIN_API_TOKEN` is auto-generated, installer shows it once and asks to save it
+- installer validates `VK_ACCESS_TOKEN` via VK API preflight before service start
+- if `openclaw_agent_wrapper.sh` exists, installer marks it executable automatically
 
 It writes local `.env.local`, installs service mode, starts service, and runs status check.
 It writes local `.env.local`, installs service mode, restarts service (fallback: start), and runs status check.
+
+VK token source:
+1. Create/open VK community.
+2. `Manage -> Advanced -> API access`.
+3. `Create key`.
+4. Use key value as `VK_ACCESS_TOKEN`.
+
+Peer id source:
+- DM: user id.
+- Group chat: `peer_id`.
 
 ## Service commands
 ```bash
@@ -85,6 +95,18 @@ Interactive setup offers pairing helper:
 - suggests `/status` and `/ask`
 - uses `http://127.0.0.1:8000` by default; override with `VK_OPENCLAW_API_BASE_URL`
 
+## Fallback run mode (without systemd --user)
+If `systemctl --user` fails with `Failed to connect to bus`, run:
+```bash
+cd ~/VK_OpenClaw_Service
+source .venv/bin/activate
+set -a && source .env.local && set +a
+nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &
+nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &
+tail -n 50 /tmp/vk_worker.log
+```
+Important: load `.env.local` before manual worker start. Otherwise worker may fail with `VK API error 15: token required`.
+
 ## Troubleshooting
 1. Invalid VK token:
 - rotate token in VK settings and run `vk-openclaw setup` again.
@@ -100,3 +122,10 @@ Interactive setup offers pairing helper:
 
 5. DNS/network issue:
 - retry after network recovery; database checks are warnings unless mode requires connectivity.
+
+6. WSL DNS flaps (`Temporary failure in name resolution`):
+- pin DNS:
+```bash
+sudo bash -c 'printf "[network]\ngenerateResolvConf = false\n" > /etc/wsl.conf && rm -f /etc/resolv.conf && printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf && chmod 644 /etc/resolv.conf'
+```
+- then run `wsl --shutdown` from Windows PowerShell.

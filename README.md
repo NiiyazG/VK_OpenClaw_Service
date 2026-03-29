@@ -49,6 +49,16 @@ systemctl --user restart vk-openclaw-api.service vk-openclaw-worker.service
 vk-openclaw status
 ```
 
+VK token source (community flow):
+1. Create or open your VK community.
+2. Go to `Manage -> Advanced -> API access`.
+3. Click `Create key`.
+4. Use the generated key as `VK_ACCESS_TOKEN`.
+
+Peer ID note:
+- DM: `VK_ALLOWED_PEERS` is the user ID.
+- Group chat: `VK_ALLOWED_PEERS` is the chat `peer_id`.
+
 Interactive setup now auto-selects:
 - `PERSISTENCE_MODE=file`
 - `OPENCLAW_COMMAND` from local wrapper or `openclaw`
@@ -78,6 +88,16 @@ vk-openclaw status
 Or run directly:
 ```bash
 ./.venv/bin/vk-openclaw status
+```
+
+If `systemctl --user` is unavailable (`Failed to connect to bus`), run fallback mode:
+```bash
+cd ~/VK_OpenClaw_Service
+source .venv/bin/activate
+set -a && source .env.local && set +a
+nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &
+nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &
+tail -n 60 /tmp/vk_worker.log
 ```
 
 ## Configuration / Конфигурация
@@ -113,6 +133,22 @@ If VK does not respond:
 - verify `VK_ALLOWED_PEERS` contains the real `peer_id`,
 - check `vk-openclaw status`,
 - rerun setup and pairing helper.
+- check worker log for DNS/token errors:
+  - `Temporary failure in name resolution`
+  - `VK API error 15: Access denied: token required`
+
+WSL DNS fix (if resolver is unstable):
+```bash
+sudo bash -c 'printf "[network]\ngenerateResolvConf = false\n" > /etc/wsl.conf && rm -f /etc/resolv.conf && printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf && chmod 644 /etc/resolv.conf'
+```
+Then run in Windows PowerShell:
+```powershell
+wsl --shutdown
+```
+
+## Known Issues
+- `Failed to connect to bus`: `systemd --user` session bus is unavailable. Use fallback mode above.
+- `Temporary failure in name resolution`: DNS is unstable. Apply WSL DNS fix and restart services.
 
 ## Security / Безопасность
 Never commit:

@@ -15,6 +15,7 @@ import subprocess  # nosec B404
 import sys
 import time
 from urllib import error, request
+from urllib.parse import urlencode
 from urllib.parse import urlparse
 
 SYSTEMD_UNIT_API = "vk-openclaw-api.service"
@@ -22,6 +23,8 @@ SYSTEMD_UNIT_WORKER = "vk-openclaw-worker.service"
 WINDOWS_SERVICE_ID = "vk-openclaw-service"
 DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000"
 API_BASE_URL_ENV = "VK_OPENCLAW_API_BASE_URL"
+VK_API_BASE_URL = "https://api.vk.com/method"
+VK_API_VERSION = "5.199"
 AUTHOR_INFO_LINES = [
     "Author: Гарипов Нияз Варисович февраль 2026",
     "- Email: garipovn@yandex.ru",
@@ -206,6 +209,14 @@ def _prompt_secret_with_mode(*, prompt_label: str, platform_name: str, mode: str
         _print_bi(platform_name, "Значение не может быть пустым.", "Value cannot be empty.")
 
 
+def _prompt_visible_required(*, prompt_label: str, platform_name: str) -> str:
+    while True:
+        value = input(prompt_label).strip()
+        if value:
+            return value
+        _print_bi(platform_name, "Значение не может быть пустым.", "Value cannot be empty.")
+
+
 def _prompt_with_default(prompt: str, default: str) -> str:
     value = input(f"{prompt} [{default}]: ").strip()
     return value or default
@@ -230,6 +241,44 @@ def load_config_file(path: Path) -> dict[str, str]:
     if not isinstance(payload, dict):
         raise ValueError("Config file must be a JSON object.")
     return {str(key): str(value) for key, value in payload.items()}
+
+
+def verify_vk_access_token(token: str) -> tuple[bool, str]:
+    token_value = token.strip()
+    if not token_value:
+        return False, "VK API error: token is empty."
+    body = urlencode(
+        {
+            "access_token": token_value,
+            "v": VK_API_VERSION,
+        }
+    ).encode("utf-8")
+    req = request.Request(
+        url=f"{VK_API_BASE_URL}/users.get",
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with request.urlopen(req, timeout=8) as response:  # nosec B310
+            payload = json.loads(response.read().decode("utf-8"))
+    except (error.HTTPError, error.URLError, TimeoutError) as exc:
+        return False, f"VK API request failed: {exc}"
+    except json.JSONDecodeError as exc:
+        return False, f"VK API returned invalid JSON: {exc}"
+    if not isinstance(payload, dict):
+        return False, "VK API returned unexpected response type."
+    if "error" in payload:
+        vk_error = payload["error"]
+        if isinstance(vk_error, dict):
+            code = vk_error.get("error_code", "unknown")
+            message = vk_error.get("error_msg", "unknown error")
+            return False, f"VK API error {code}: {message}"
+        return False, f"VK API error: {vk_error}"
+    response_obj = payload.get("response")
+    if not isinstance(response_obj, list) or not response_obj:
+        return False, "VK API returned empty response for users.get."
+    return True, ""
 
 
 def prompt_install_config(
@@ -262,13 +311,13 @@ def prompt_install_config(
     _print_bi(resolved_platform, "Перед началом нужно:", "What you need before start:")
     _print_bi(
         resolved_platform,
-        "1) VK_ACCESS_TOKEN (настройки VK ID/VK Dev, права на сообщения)",
-        "1) VK_ACCESS_TOKEN (VK ID / VK developer settings, message permissions)",
+        "1) VK_ACCESS_TOKEN (сообщество VK -> Управление -> Дополнительно -> Работа с API -> Создать ключ)",
+        "1) VK_ACCESS_TOKEN (VK community -> Manage -> Advanced -> API access -> Create key)",
     )
     _print_bi(
         resolved_platform,
-        "2) VK_ALLOWED_PEERS (peer_id чата/диалога)",
-        "2) VK_ALLOWED_PEERS (chat/dialog peer_id)",
+        "2) VK_ALLOWED_PEERS (ID пользователя для ЛС или peer_id беседы)",
+        "2) VK_ALLOWED_PEERS (user id for DM or chat peer_id)",
     )
     _print_bi(
         resolved_platform,
@@ -288,54 +337,41 @@ def prompt_install_config(
         "ADMIN_API_TOKEN защищает admin API эндпоинты.",
         "ADMIN_API_TOKEN secures admin API endpoints.",
     )
-    admin_mode = _prompt_secret_mode(platform_name=resolved_platform, field_name="ADMIN_API_TOKEN")
-    admin_prompt = _bi(
+    admin_token = secrets.token_hex(32)
+    _print_bi(
         resolved_platform,
-        "ADMIN_API_TOKEN (Enter = сгенерировать автоматически): ",
-        "ADMIN_API_TOKEN (Enter = auto-generate): ",
+        "ADMIN_API_TOKEN сгенерирован автоматически.",
+        "ADMIN_API_TOKEN was auto-generated.",
     )
-    if admin_mode == "paste-visible":
-        admin_input = input(admin_prompt).strip()
-    else:
-        admin_input = getpass(admin_prompt).strip()
-    admin_token = admin_input or secrets.token_hex(32)
-    if not admin_input:
-        _print_bi(
+    _print_bi(
+        resolved_platform,
+        "ВНИМАНИЕ: токен будет показан один раз. Сохраните его сейчас в менеджер паролей.",
+        "WARNING: token will be shown once. Save it now in your password manager.",
+    )
+    print(f"ADMIN_API_TOKEN={admin_token}")
+    input(
+        _bi(
             resolved_platform,
-            "ADMIN_API_TOKEN сгенерирован автоматически.",
-            "ADMIN_API_TOKEN was auto-generated.",
+            "Нажмите Enter после сохранения токена...",
+            "Press Enter after saving the token...",
         )
-        _print_bi(
-            resolved_platform,
-            "ВНИМАНИЕ: токен будет показан один раз. Сохраните его сейчас в менеджер паролей.",
-            "WARNING: token will be shown once. Save it now in your password manager.",
-        )
-        print(f"ADMIN_API_TOKEN={admin_token}")
-        input(
-            _bi(
-                resolved_platform,
-                "Нажмите Enter после сохранения токена...",
-                "Press Enter after saving the token...",
-            )
-        )
-        _visual_break()
+    )
+    _visual_break()
 
     print()
     _print_bi(
         resolved_platform,
-        "VK_ACCESS_TOKEN: получите в настройках приложения/сообщества VK.",
-        "VK_ACCESS_TOKEN: create in VK app/community bot settings.",
+        "VK_ACCESS_TOKEN: создайте в сообществе VK (Управление -> Дополнительно -> Работа с API -> Создать ключ).",
+        "VK_ACCESS_TOKEN: create in VK community settings (Manage -> Advanced -> API access -> Create key).",
     )
     _print_bi(
         resolved_platform,
-        "Если вставка не работает в hidden, выберите режим paste-visible.",
-        "If paste does not work in hidden mode, switch to paste-visible mode.",
+        "Вставьте токен в открытый ввод ниже (copy/paste).",
+        "Paste token in visible input below (copy/paste).",
     )
-    vk_mode = _prompt_secret_mode(platform_name=resolved_platform, field_name="VK_ACCESS_TOKEN")
-    vk_access_token = _prompt_secret_with_mode(
+    vk_access_token = _prompt_visible_required(
         prompt_label=_bi(resolved_platform, "VK_ACCESS_TOKEN: ", "VK_ACCESS_TOKEN: "),
         platform_name=resolved_platform,
-        mode=vk_mode,
     )
 
     print()
@@ -386,7 +422,7 @@ def render_env_local(config: InstallConfig, *, target_os: str) -> str:
         f"DATABASE_DSN={config.database_dsn}",
         f"REDIS_DSN={config.redis_dsn}",
         "VK_MODE=plain",
-        "FREE_TEXT_ASK_ENABLED=false",
+        "FREE_TEXT_ASK_ENABLED=true",
         "PAIR_CODE_TTL_SEC=600",
         "VK_RATE_LIMIT_PER_MIN=6",
         "VK_MAX_ATTACHMENTS=2",
@@ -926,7 +962,37 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
         print(redact_env_preview(env_content))
         return 0
 
+    vk_ok, vk_reason = verify_vk_access_token(config.vk_access_token)
+    if not vk_ok:
+        _print_bi(
+            platform_name,
+            "Ошибка: VK_ACCESS_TOKEN не прошел проверку preflight.",
+            "Error: VK_ACCESS_TOKEN failed preflight validation.",
+        )
+        print(_bi(platform_name, f"Причина: {vk_reason}", f"Reason: {vk_reason}"))
+        _print_bi(
+            platform_name,
+            "Проверьте токен и права в VK, затем запустите setup снова.",
+            "Check VK token and permissions, then run setup again.",
+        )
+        return 1
+
     write_env_local(env_path, env_content)
+    wrapper_path = workdir / "openclaw_agent_wrapper.sh"
+    if platform_name == "linux" and wrapper_path.exists():
+        try:
+            wrapper_path.chmod(wrapper_path.stat().st_mode | 0o111)
+            _print_bi(
+                platform_name,
+                f"Wrapper отмечен как executable: {wrapper_path}",
+                f"Wrapper marked executable: {wrapper_path}",
+            )
+        except OSError as exc:
+            _print_bi(
+                platform_name,
+                f"Предупреждение: не удалось выставить executable для wrapper: {exc}",
+                f"Warning: failed to mark wrapper executable: {exc}",
+            )
 
     install_code = install_service_files(
         platform_name=platform_name,

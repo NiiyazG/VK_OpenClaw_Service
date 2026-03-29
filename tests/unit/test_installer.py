@@ -39,6 +39,7 @@ def test_render_env_local_contains_expected_keys() -> None:
     assert "ADMIN_API_TOKEN=admin-token" in env_text
     assert "VK_ACCESS_TOKEN=vk-token" in env_text
     assert "PERSISTENCE_MODE=file" in env_text
+    assert "FREE_TEXT_ASK_ENABLED=true" in env_text
     assert "INSTALL_TARGET_OS=linux" in env_text
 
 
@@ -163,15 +164,12 @@ def test_prompt_install_config_non_interactive_uses_json_config(tmp_path: Path) 
 def test_prompt_install_config_auto_generated_admin_one_time_reveal(monkeypatch, capsys) -> None:
     inputs = iter(
         [
-            "hidden",  # ADMIN mode
             "",  # confirm one-time reveal
-            "hidden",  # VK mode
+            "vk-visible-token",
             "42",  # VK_ALLOWED_PEERS
         ]
     )
-    secrets_input = iter(["", "vk-hidden-token"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-    monkeypatch.setattr(installer, "getpass", lambda _: next(secrets_input))
     monkeypatch.setattr(installer.secrets, "token_hex", lambda n: "a" * 64)
 
     config = installer.prompt_install_config(non_interactive=False, config_path=None, platform_name="linux")
@@ -181,27 +179,63 @@ def test_prompt_install_config_auto_generated_admin_one_time_reveal(monkeypatch,
     assert config.persistence_mode == "file"
     assert config.database_dsn == ""
     assert config.redis_dsn == ""
+    assert config.vk_access_token == "vk-visible-token"
     assert config.openclaw_command == installer._default_openclaw_command()
     assert "ADMIN_API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in output
     assert "shown once" in output
 
 
-def test_prompt_install_config_paste_visible_for_vk_token(monkeypatch) -> None:
+def test_prompt_install_config_retries_on_empty_visible_vk_token(monkeypatch) -> None:
     inputs = iter(
         [
-            "hidden",  # ADMIN mode
-            "paste-visible",  # VK mode
+            "",  # confirm one-time reveal
+            "",  # empty VK token (retry)
             "vk-visible-token",  # VK token
             "42",  # peers
         ]
     )
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-    monkeypatch.setattr(installer, "getpass", lambda _: "admin-token")
+    monkeypatch.setattr(installer.secrets, "token_hex", lambda n: "b" * 64)
 
     config = installer.prompt_install_config(non_interactive=False, config_path=None, platform_name="linux")
     assert config.vk_access_token == "vk-visible-token"
     assert config.persistence_mode == "file"
     assert config.openclaw_command == installer._default_openclaw_command()
+
+
+def test_verify_vk_access_token_ok(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"response":[{"id":1}]}'
+
+    monkeypatch.setattr(installer.request, "urlopen", lambda *args, **kwargs: FakeResponse())
+    ok, reason = installer.verify_vk_access_token("vk-token")
+    assert ok is True
+    assert reason == ""
+
+
+def test_verify_vk_access_token_vk_error(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"error":{"error_code":15,"error_msg":"Access denied: token required"}}'
+
+    monkeypatch.setattr(installer.request, "urlopen", lambda *args, **kwargs: FakeResponse())
+    ok, reason = installer.verify_vk_access_token("vk-token")
+    assert ok is False
+    assert "error 15" in reason.lower()
+    assert "token required" in reason.lower()
 
 
 def test_run_setup_blocks_when_openclaw_missing(monkeypatch, capsys) -> None:
@@ -236,6 +270,7 @@ def test_run_setup_dry_run_skips_writes_and_service_install(monkeypatch, tmp_pat
     monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
     monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
     monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
     monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
 
     called = {"write": False, "install": False}
@@ -289,6 +324,7 @@ def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, mo
     monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
     monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
     monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
     monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
 
     class FakeProcess:
@@ -507,6 +543,7 @@ def test_run_setup_prefers_restart_then_falls_back_to_start(monkeypatch, tmp_pat
     monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
     monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
     monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
     monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
     monkeypatch.setattr(installer, "install_service_files", lambda **kwargs: 0)
 
@@ -522,3 +559,77 @@ def test_run_setup_prefers_restart_then_falls_back_to_start(monkeypatch, tmp_pat
     exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
     assert exit_code == 0
     assert calls[:2] == ["restart", "start"]
+
+
+def test_run_setup_fails_fast_when_vk_token_preflight_fails(monkeypatch, tmp_path: Path, capsys) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    config_path = workdir / "install.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ADMIN_API_TOKEN": "admin-token",
+                "VK_ACCESS_TOKEN": "vk-token",
+                "VK_ALLOWED_PEERS": "42",
+                "PERSISTENCE_MODE": "file",
+                "OPENCLAW_COMMAND": "openclaw",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(
+        installer,
+        "verify_vk_access_token",
+        lambda token: (False, "VK API error 15: Access denied: token required"),
+    )
+
+    exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "preflight" in output.lower()
+    assert "token required" in output.lower()
+
+
+def test_run_setup_marks_wrapper_as_executable(monkeypatch, tmp_path: Path) -> None:
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    wrapper = workdir / "openclaw_agent_wrapper.sh"
+    wrapper.write_text("#!/usr/bin/env bash\necho ok\n", encoding="utf-8")
+    wrapper.chmod(0o644)
+    config_path = workdir / "install.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ADMIN_API_TOKEN": "admin-token",
+                "VK_ACCESS_TOKEN": "vk-token",
+                "VK_ALLOWED_PEERS": "42",
+                "PERSISTENCE_MODE": "file",
+                "OPENCLAW_COMMAND": "./openclaw_agent_wrapper.sh",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
+    monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
+    monkeypatch.setattr(installer, "check_openclaw_installed", lambda: (True, ""))
+    monkeypatch.setattr(installer, "verify_vk_access_token", lambda token: (True, ""))
+    monkeypatch.setattr(installer, "resolve_cli_executable", lambda: "/tmp/vk-openclaw")
+    monkeypatch.setattr(installer, "install_service_files", lambda **kwargs: 0)
+    monkeypatch.setattr(installer, "manage_service", lambda command: 0)
+    chmod_calls: list[Path] = []
+    original_chmod = Path.chmod
+
+    def spy_chmod(path_obj: Path, mode: int) -> None:
+        chmod_calls.append(path_obj)
+        original_chmod(path_obj, mode)
+
+    monkeypatch.setattr(Path, "chmod", spy_chmod)
+
+    exit_code = installer.run_setup(non_interactive=True, config_path=config_path, dry_run=False)
+    assert exit_code == 0
+    assert wrapper in chmod_calls
