@@ -18,3 +18,8 @@ class PairingCodeResponse(BaseModel):
 class PairingVerifyRequest(BaseModel):
     peer_id: int
     code: str
+
+
+class PairingPeersResponse(BaseModel):
+    items: list[int]
+    count: int

@@ -367,3 +367,44 @@ def test_manage_service_windows_uses_winsw(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
     assert installer.manage_service("status") == 0
     assert str(exe) in captured[0][0]
+
+
+def test_peer_list_from_payload_parses_ints_and_numeric_strings() -> None:
+    payload = {"items": [42, "77", "bad", None]}
+    assert installer._peer_list_from_payload(payload) == {42, 77}
+
+
+def test_run_pairing_helper_uses_paired_peers_endpoint(monkeypatch, capsys) -> None:
+    calls: list[str] = []
+    config = installer.InstallConfig(
+        admin_api_token="admin-token",
+        vk_access_token="vk-token",
+        vk_allowed_peers="42",
+        persistence_mode="file",
+        database_dsn="",
+        redis_dsn="",
+        openclaw_command="openclaw",
+    )
+
+    inputs = iter(["y", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    monkeypatch.setattr(installer.time, "sleep", lambda _: None)
+
+    def fake_http_json(url: str, *, method: str, payload: dict[str, object], bearer_token: str) -> dict[str, object]:
+        calls.append(url)
+        if url.endswith("/api/v1/pairing/code"):
+            return {"peer_id": 42, "code": "ABCD1234"}
+        if url.endswith("/api/v1/pairing/peers"):
+            return {"items": [42], "count": 1}
+        if url.endswith("/api/v1/status"):
+            return {"mode": "plain"}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(installer, "_http_json", fake_http_json)
+
+    installer.run_pairing_helper(config, platform_name="linux")
+    output = capsys.readouterr().out
+
+    assert any(url.endswith("/api/v1/pairing/peers") for url in calls)
+    assert not any(url.endswith("/api/v1/pairing/verify") for url in calls)
+    assert "Pairing confirmed via VK." in output

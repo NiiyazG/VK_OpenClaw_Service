@@ -232,3 +232,61 @@ def test_worker_service_dead_letters_when_retry_budget_is_exhausted() -> None:
     assert state.last_committed_message_id == 12
     assert state.status == "idle"
     assert audit_repository.events[-1]["event_type"] == "message_dead_lettered"
+
+
+def test_worker_service_verifies_pairing_command_via_vk_message() -> None:
+    repository = InMemoryCheckpointRepository()
+    audit_repository = InMemoryAuditRepository()
+    sent: list[tuple[int, str]] = []
+    verifier_calls: list[tuple[int, str]] = []
+    service = WorkerService(
+        checkpoint_repository=repository,
+        delivery_classifier=lambda exc: VkDeliveryOutcome.REJECT,
+        openclaw_runner=lambda prompt: f"ran:{prompt}",
+        reply_sender=lambda peer_id, text: sent.append((peer_id, text)),
+        audit_repository=audit_repository,
+        pairing_verifier=lambda peer_id, code: verifier_calls.append((peer_id, code)) or {"status": "paired"},
+    )
+
+    result = service.process_message(
+        peer_id=42,
+        message_id=13,
+        text="/pair ABC12345",
+        paired=False,
+        status_payload={"mode": "plain"},
+    )
+
+    assert result == {"action": "reply", "reply": "Pairing successful."}
+    assert verifier_calls == [(42, "ABC12345")]
+    assert sent == [(42, "Pairing successful.")]
+    assert any(event["event_type"] == "pairing_verified_via_vk" for event in audit_repository.events)
+
+
+def test_worker_service_returns_invalid_reply_for_bad_pairing_code() -> None:
+    repository = InMemoryCheckpointRepository()
+    audit_repository = InMemoryAuditRepository()
+    sent: list[tuple[int, str]] = []
+    def failing_verifier(peer_id: int, code: str) -> dict:
+        del peer_id, code
+        raise ValueError("invalid_pairing_code")
+
+    service = WorkerService(
+        checkpoint_repository=repository,
+        delivery_classifier=lambda exc: VkDeliveryOutcome.REJECT,
+        openclaw_runner=lambda prompt: f"ran:{prompt}",
+        reply_sender=lambda peer_id, text: sent.append((peer_id, text)),
+        audit_repository=audit_repository,
+        pairing_verifier=failing_verifier,
+    )
+
+    result = service.process_message(
+        peer_id=42,
+        message_id=14,
+        text="/pair BADCODE1",
+        paired=False,
+        status_payload={"mode": "plain"},
+    )
+
+    assert result == {"action": "reply", "reply": "Invalid or expired pairing code."}
+    assert sent == [(42, "Invalid or expired pairing code.")]
+    assert any(event["event_type"] == "pairing_failed_via_vk" for event in audit_repository.events)

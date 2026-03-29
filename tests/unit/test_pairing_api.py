@@ -65,6 +65,13 @@ def test_pairing_verify_endpoint_marks_peer_paired(runtime_settings_factory) -> 
     assert verify_response.status_code == 200
     assert verify_response.json() == {"status": "paired"}
 
+    peers_response = client.get(
+        "/api/v1/pairing/peers",
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
+    assert peers_response.status_code == 200
+    assert peers_response.json() == {"items": [42], "count": 1}
+
 
 def test_pairing_verify_endpoint_rejects_invalid_code(runtime_settings_factory) -> None:
     client = TestClient(create_app(settings=runtime_settings_factory(pair_code_ttl_sec=900)))
@@ -80,3 +87,9 @@ def test_pairing_verify_endpoint_rejects_invalid_code(runtime_settings_factory) 
     )
 
     assert verify_response.status_code == 403
+
+
+def test_pairing_peers_endpoint_requires_admin_token() -> None:
+    client = TestClient(create_app())
+    response = client.get("/api/v1/pairing/peers")
+    assert response.status_code == 401

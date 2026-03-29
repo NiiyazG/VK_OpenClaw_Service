@@ -73,7 +73,8 @@ vk-openclaw stop
 Interactive setup offers pairing helper:
 - requests pair code from API
 - tells user to run `/pair <code>` in VK
-- verifies pairing and suggests `/status` and `/ask`
+- waits until peer appears in `/api/v1/pairing/peers`
+- suggests `/status` and `/ask`
 
 ## Troubleshooting
 1. Invalid VK token:

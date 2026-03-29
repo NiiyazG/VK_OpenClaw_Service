@@ -50,12 +50,12 @@ VK_ALLOWED_PEERS=123456789
 После установки мастер предлагает pairing helper:
 1. Генерирует pair-code через API.
 2. Показывает команду для VK: `/pair <code>`.
-3. Проверяет pair и рекомендует проверить `/status` и `/ask`.
+3. Ждет подтверждение pairing через список paired peers и рекомендует проверить `/status` и `/ask`.
 
 Если helper пропущен:
 - вручную вызовите `POST /api/v1/pairing/code`,
 - отправьте `/pair <code>` в VK,
-- подтвердите через `POST /api/v1/pairing/verify`.
+- убедитесь, что peer появился в `GET /api/v1/pairing/peers`.
 
 ### 4. Частые ошибки
 1. `token required` или `Unauthorized`:
@@ -84,6 +84,10 @@ Recommended flow:
 2. Resolve `peer_id` from logs or VK API.
 3. Complete guided pairing helper.
 4. Confirm VK commands: `/status` then `/ask ...`.
+
+Pairing is VK-first:
+- the code is verified when worker receives `/pair <code>` from VK,
+- setup helper validates pairing by checking `GET /api/v1/pairing/peers`.
 
 ## Security notes
 - Never commit `.env`, `.env.local`, access tokens, passwords, DSN credentials, or private keys.

@@ -59,6 +59,10 @@ class RetryQueue(Protocol):
     ) -> None: ...
 
 
+class PairingVerifier(Protocol):
+    def __call__(self, peer_id: int, code: str) -> dict: ...
+
+
 class WorkerService:
     def __init__(
         self,
@@ -72,6 +76,7 @@ class WorkerService:
         rate_limiter: RateLimiter | None = None,
         replay_guard: ReplayGuard | None = None,
         retry_queue: RetryQueue | None = None,
+        pairing_verifier: PairingVerifier | None = None,
         retry_queue_max_attempts: int = 3,
         free_text_ask_enabled: bool = False,
     ) -> None:
@@ -84,6 +89,7 @@ class WorkerService:
         self.rate_limiter = rate_limiter
         self.replay_guard = replay_guard
         self.retry_queue = retry_queue
+        self.pairing_verifier = pairing_verifier
         self.retry_queue_max_attempts = retry_queue_max_attempts
         self.free_text_ask_enabled = free_text_ask_enabled
 
@@ -118,6 +124,34 @@ class WorkerService:
                 rate_limiter=self.rate_limiter,
                 free_text_ask_enabled=self.free_text_ask_enabled,
             )
+            if result["action"] == "pair":
+                code = str(result.get("code", "")).strip()
+                if not code or self.pairing_verifier is None:
+                    result = {"action": "reply", "reply": "Invalid or expired pairing code."}
+                    self._append_audit_event(
+                        event_type="pairing_failed_via_vk",
+                        peer_id=peer_id,
+                        status="failed",
+                        details={"message_id": message_id, "reason": "invalid_pairing_code"},
+                    )
+                else:
+                    try:
+                        self.pairing_verifier(peer_id, code)
+                        result = {"action": "reply", "reply": "Pairing successful."}
+                        self._append_audit_event(
+                            event_type="pairing_verified_via_vk",
+                            peer_id=peer_id,
+                            status="ok",
+                            details={"message_id": message_id},
+                        )
+                    except Exception:
+                        result = {"action": "reply", "reply": "Invalid or expired pairing code."}
+                        self._append_audit_event(
+                            event_type="pairing_failed_via_vk",
+                            peer_id=peer_id,
+                            status="failed",
+                            details={"message_id": message_id, "reason": "invalid_pairing_code"},
+                        )
             if result["action"] == "reply":
                 delivery_outcome = deliver_reply(
                     sender=self,

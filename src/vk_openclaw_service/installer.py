@@ -13,6 +13,7 @@ import shutil
 import socket
 import subprocess  # nosec B404
 import sys
+import time
 from urllib import error, request
 from urllib.parse import urlparse
 
@@ -702,6 +703,23 @@ def _http_json(url: str, *, method: str, payload: dict[str, object], bearer_toke
     return parsed
 
 
+def _peer_list_from_payload(payload: dict[str, object]) -> set[int]:
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return set()
+    peers: set[int] = set()
+    for item in raw_items:
+        if isinstance(item, int):
+            peers.add(item)
+            continue
+        if isinstance(item, str):
+            try:
+                peers.add(int(item))
+            except ValueError:
+                continue
+    return peers
+
+
 def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
     peer_id = _detect_primary_peer(config.vk_allowed_peers)
     if peer_id is None:
@@ -736,7 +754,7 @@ def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
         )
     ).strip() or "http://127.0.0.1:8000"
     code_url = f"{base_url.rstrip('/')}/api/v1/pairing/code"
-    verify_url = f"{base_url.rstrip('/')}/api/v1/pairing/verify"
+    peers_url = f"{base_url.rstrip('/')}/api/v1/pairing/peers"
     status_url = f"{base_url.rstrip('/')}/api/v1/status"
     try:
         code_payload = _http_json(
@@ -759,17 +777,36 @@ def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
             f"Send this command in VK chat: /pair {code}",
         )
         input(_bi(platform_name, "Нажмите Enter после отправки /pair ...", "Press Enter after sending /pair ..."))
-        verify_payload = _http_json(
-            verify_url,
-            method="POST",
-            payload={"peer_id": peer_id, "code": code},
-            bearer_token=config.admin_api_token,
-        )
-        _print_bi(
-            platform_name,
-            f"Ответ pair verify: {verify_payload}",
-            f"Pair verify response: {verify_payload}",
-        )
+        peers_payload: dict[str, object] = {}
+        paired = False
+        for _ in range(15):
+            peers_payload = _http_json(
+                peers_url,
+                method="GET",
+                payload={},
+                bearer_token=config.admin_api_token,
+            )
+            if peer_id in _peer_list_from_payload(peers_payload):
+                paired = True
+                break
+            time.sleep(1)
+        if paired:
+            _print_bi(
+                platform_name,
+                f"Pairing подтвержден через VK. Peer {peer_id} найден в списке paired.",
+                f"Pairing confirmed via VK. Peer {peer_id} is present in paired peers.",
+            )
+        else:
+            _print_bi(
+                platform_name,
+                "Pairing не подтвержден: peer не появился в paired peers.",
+                "Pairing not confirmed: peer did not appear in paired peers.",
+            )
+            _print_bi(
+                platform_name,
+                f"Текущий ответ pairing/peers: {peers_payload}",
+                f"Current pairing/peers payload: {peers_payload}",
+            )
         status_payload = _http_json(
             status_url,
             method="GET",
@@ -777,17 +814,24 @@ def run_pairing_helper(config: InstallConfig, *, platform_name: str) -> None:
             bearer_token=config.admin_api_token,
         )
         _print_bi(platform_name, f"Снимок статуса: {status_payload}", f"Status snapshot: {status_payload}")
-        _print_bi(
-            platform_name,
-            "Pairing helper завершен. Проверьте в VK: /status, затем /ask привет",
-            "Pairing helper completed. Validate in VK: /status then /ask привет",
-        )
+        if paired:
+            _print_bi(
+                platform_name,
+                "Pairing helper завершен. Проверьте в VK: /status, затем /ask привет.",
+                "Pairing helper completed. Validate in VK: /status then /ask hello.",
+            )
+        else:
+            _print_bi(
+                platform_name,
+                "Pairing helper завершен с предупреждением: pairing не подтвержден.",
+                "Pairing helper completed with warning: pairing was not confirmed.",
+            )
     except (error.HTTPError, error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
         _print_bi(platform_name, f"Ошибка pairing helper: {exc}", f"Pairing helper failed: {exc}")
         _print_bi(
             platform_name,
-            "Можно продолжить вручную через /api/v1/pairing/code и /api/v1/pairing/verify.",
-            "You can continue manually with /api/v1/pairing/code and /api/v1/pairing/verify.",
+            "Можно продолжить вручную через /api/v1/pairing/code и команду /pair <code> в VK.",
+            "You can continue manually with /api/v1/pairing/code and /pair <code> in VK.",
         )
 
 

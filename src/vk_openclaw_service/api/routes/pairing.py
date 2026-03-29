@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from vk_openclaw_service.api.deps import get_container, require_admin_token
-from vk_openclaw_service.api.schemas.pairing import PairingCodeRequest, PairingCodeResponse, PairingVerifyRequest
+from vk_openclaw_service.api.schemas.pairing import (
+    PairingCodeRequest,
+    PairingCodeResponse,
+    PairingPeersResponse,
+    PairingVerifyRequest,
+)
 from vk_openclaw_service.bootstrap.container import AppContainer
 
 
@@ -26,3 +31,11 @@ def verify_pairing_code(
     container: AppContainer = Depends(get_container),
 ) -> dict:
     return container.pairing_service.verify_code(request.peer_id, request.code)
+
+
+@router.get("/peers", response_model=PairingPeersResponse, dependencies=[Depends(require_admin_token)])
+def list_paired_peers(
+    container: AppContainer = Depends(get_container),
+) -> dict:
+    items = container.pairing_repository.list_paired_peers()
+    return {"items": items, "count": len(items)}

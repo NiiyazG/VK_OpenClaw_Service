@@ -73,6 +73,7 @@ def build_container(settings: RuntimeSettings | None = None) -> AppContainer:
         rate_limiter=rate_limiter,
         replay_guard=replay_guard,
         retry_queue=retry_queue,
+        pairing_verifier=lambda peer_id, code: pairing_service.verify_code(peer_id, code),
         retry_queue_max_attempts=runtime_settings.retry_queue_max_attempts,
         free_text_ask_enabled=runtime_settings.free_text_ask_enabled,
     )

@@ -55,6 +55,19 @@ Use placeholders from `.env.example` and keep real values only in local `.env` /
 Step-by-step token and `peer_id` setup:
 - `docs/vk_setup.md`
 
+Pairing flow (VK-first):
+1. Setup helper requests a code via admin API.
+2. You send `/pair <code>` in the target VK chat.
+3. Worker verifies the code from the VK message and replies:
+   - `Pairing successful.`
+   - `Invalid or expired pairing code.`
+4. Setup helper confirms that the peer appears in paired peers.
+
+If VK does not respond:
+- verify `VK_ALLOWED_PEERS` contains the real `peer_id`,
+- check `vk-openclaw status`,
+- rerun setup and pairing helper.
+
 ## Security / Безопасность
 Never commit:
 - `.env` files
