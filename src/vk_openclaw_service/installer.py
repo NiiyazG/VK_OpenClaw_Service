@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from getpass import getpass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -58,11 +59,25 @@ def format_secret_status(value: str) -> str:
     return f"SET ({len(secret)} chars)"
 
 
+def secret_fingerprint(value: str) -> str:
+    secret = value.strip()
+    if not secret:
+        return "n/a"
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
 def render_secret_confirmation(config: InstallConfig, *, platform_name: str) -> str:
     lines = [
         _bi(platform_name, "Подтверждение секретов:", "Secret confirmation:"),
-        f"- ADMIN_API_TOKEN: {format_secret_status(config.admin_api_token)}",
-        f"- VK_ACCESS_TOKEN: {format_secret_status(config.vk_access_token)}",
+        (
+            f"- ADMIN_API_TOKEN: {format_secret_status(config.admin_api_token)}, "
+            f"fingerprint: {secret_fingerprint(config.admin_api_token)}"
+        ),
+        (
+            f"- VK_ACCESS_TOKEN: {format_secret_status(config.vk_access_token)}, "
+            f"fingerprint: {secret_fingerprint(config.vk_access_token)}"
+        ),
         _bi(
             platform_name,
             "Значения скрыты в целях безопасности.",
@@ -153,6 +168,41 @@ def _prompt_non_empty(prompt: str, *, secret_value: bool = False) -> str:
         print("Value cannot be empty.")
 
 
+def _visual_break() -> None:
+    print("\n" * 3 + "=" * 48)
+
+
+def _prompt_secret_mode(*, platform_name: str, field_name: str, default_mode: str = "hidden") -> str:
+    if platform_name != "linux":
+        return "hidden"
+    prompt = _bi(
+        platform_name,
+        f"{field_name}: режим ввода secret hidden/paste-visible [{default_mode}]: ",
+        f"{field_name}: secret input mode hidden/paste-visible [{default_mode}]: ",
+    )
+    raw_mode = input(prompt).strip().lower()
+    mode = raw_mode or default_mode
+    if mode not in {"hidden", "paste-visible"}:
+        _print_bi(
+            platform_name,
+            "Неизвестный режим, используем hidden.",
+            "Unknown mode, falling back to hidden.",
+        )
+        return "hidden"
+    return mode
+
+
+def _prompt_secret_with_mode(*, prompt_label: str, platform_name: str, mode: str) -> str:
+    while True:
+        if mode == "paste-visible":
+            value = input(prompt_label).strip()
+        else:
+            value = getpass(prompt_label).strip()
+        if value:
+            return value
+        _print_bi(platform_name, "Значение не может быть пустым.", "Value cannot be empty.")
+
+
 def _prompt_with_default(prompt: str, default: str) -> str:
     value = input(f"{prompt} [{default}]: ").strip()
     return value or default
@@ -235,13 +285,16 @@ def prompt_install_config(
         "ADMIN_API_TOKEN защищает admin API эндпоинты.",
         "ADMIN_API_TOKEN secures admin API endpoints.",
     )
-    admin_input = getpass(
-        _bi(
-            resolved_platform,
-            "ADMIN_API_TOKEN (Enter = сгенерировать автоматически): ",
-            "ADMIN_API_TOKEN (Enter = auto-generate): ",
-        )
-    ).strip()
+    admin_mode = _prompt_secret_mode(platform_name=resolved_platform, field_name="ADMIN_API_TOKEN")
+    admin_prompt = _bi(
+        resolved_platform,
+        "ADMIN_API_TOKEN (Enter = сгенерировать автоматически): ",
+        "ADMIN_API_TOKEN (Enter = auto-generate): ",
+    )
+    if admin_mode == "paste-visible":
+        admin_input = input(admin_prompt).strip()
+    else:
+        admin_input = getpass(admin_prompt).strip()
     admin_token = admin_input or secrets.token_hex(32)
     if not admin_input:
         _print_bi(
@@ -249,6 +302,20 @@ def prompt_install_config(
             "ADMIN_API_TOKEN сгенерирован автоматически.",
             "ADMIN_API_TOKEN was auto-generated.",
         )
+        _print_bi(
+            resolved_platform,
+            "ВНИМАНИЕ: токен будет показан один раз. Сохраните его сейчас в менеджер паролей.",
+            "WARNING: token will be shown once. Save it now in your password manager.",
+        )
+        print(f"ADMIN_API_TOKEN={admin_token}")
+        input(
+            _bi(
+                resolved_platform,
+                "Нажмите Enter после сохранения токена...",
+                "Press Enter after saving the token...",
+            )
+        )
+        _visual_break()
 
     print()
     _print_bi(
@@ -256,9 +323,16 @@ def prompt_install_config(
         "VK_ACCESS_TOKEN: получите в настройках приложения/сообщества VK.",
         "VK_ACCESS_TOKEN: create in VK app/community bot settings.",
     )
-    vk_access_token = _prompt_non_empty(
-        _bi(resolved_platform, "VK_ACCESS_TOKEN: ", "VK_ACCESS_TOKEN: "),
-        secret_value=True,
+    _print_bi(
+        resolved_platform,
+        "Если вставка не работает в hidden, выберите режим paste-visible.",
+        "If paste does not work in hidden mode, switch to paste-visible mode.",
+    )
+    vk_mode = _prompt_secret_mode(platform_name=resolved_platform, field_name="VK_ACCESS_TOKEN")
+    vk_access_token = _prompt_secret_with_mode(
+        prompt_label=_bi(resolved_platform, "VK_ACCESS_TOKEN: ", "VK_ACCESS_TOKEN: "),
+        platform_name=resolved_platform,
+        mode=vk_mode,
     )
 
     print()
@@ -825,6 +899,19 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 
     if not non_interactive:
         run_pairing_helper(config, platform_name=platform_name)
+
+    _print_bi(platform_name, "Где взять токены позже:", "Where to find tokens later:")
+    print(f"- .env.local: {env_path}")
+    _print_bi(
+        platform_name,
+        "- Безопасная проверка: awk -F= '/^(ADMIN_API_TOKEN|VK_ACCESS_TOKEN)=/{print $1\": \" (length($2)>0?\"SET (\"length($2)\" chars)\":\"EMPTY\")}' .env.local",
+        "- Safe check: awk -F= '/^(ADMIN_API_TOKEN|VK_ACCESS_TOKEN)=/{print $1\": \" (length($2)>0?\"SET (\"length($2)\" chars)\":\"EMPTY\")}' .env.local",
+    )
+    _print_bi(
+        platform_name,
+        "- Аварийно (покажет значение): grep '^ADMIN_API_TOKEN=' .env.local",
+        "- Emergency (reveals value): grep '^ADMIN_API_TOKEN=' .env.local",
+    )
     return 0
 
 

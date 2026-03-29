@@ -9,6 +9,7 @@ vk-openclaw setup
 
 Подсказки мастера в Linux выводятся на двух языках: `RU / EN`.
 Ввод секретов скрыт в терминале и это нормально.
+Если вставка в hidden-режиме не работает, выберите режим `paste-visible`.
 
 Мастер попросит:
 - `VK_ACCESS_TOKEN`
@@ -17,10 +18,13 @@ vk-openclaw setup
 
 После ввода мастер безопасно подтверждает:
 ```text
-ADMIN_API_TOKEN: SET (64 chars)
-VK_ACCESS_TOKEN: SET (123 chars)
+ADMIN_API_TOKEN: SET (64 chars), fingerprint: 91d4e4be2c31
+VK_ACCESS_TOKEN: SET (123 chars), fingerprint: 4cf641f0d5a8
 ```
 `SET (N chars)` значит значение сохранено, но не показывается.
+
+Если `ADMIN_API_TOKEN` был сгенерирован автоматически, мастер показывает его один раз и просит сохранить.
+Позже токен можно найти в `.env.local` в каталоге проекта.
 
 ### 1. Как получить `VK_ACCESS_TOKEN`
 1. Откройте VK Developer / VK ID настройки приложения или сообщества.

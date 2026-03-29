@@ -54,9 +54,11 @@ vk-openclaw setup
 Linux wizard notes:
 - setup explanations are shown in RU/EN format (`RU / EN`)
 - secret input is hidden on purpose (no echo while typing)
+- if paste fails in hidden mode, switch secret input mode to `paste-visible`
 - setup prints safe confirmation:
-  - `ADMIN_API_TOKEN: SET (N chars)`
-  - `VK_ACCESS_TOKEN: SET (N chars)`
+  - `ADMIN_API_TOKEN: SET (N chars), fingerprint: xxxxxxxxxxxx`
+  - `VK_ACCESS_TOKEN: SET (N chars), fingerprint: xxxxxxxxxxxx`
+- if `ADMIN_API_TOKEN` is auto-generated, installer shows it once and asks to save it
 
 It writes local `.env.local`, installs service mode, starts service, and runs status check.
 

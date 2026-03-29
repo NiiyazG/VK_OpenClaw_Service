@@ -64,6 +64,15 @@ def test_format_secret_status() -> None:
     assert installer.format_secret_status("abcd") == "SET (4 chars)"
 
 
+def test_secret_fingerprint_is_stable_and_redacted() -> None:
+    fp1 = installer.secret_fingerprint("token-value")
+    fp2 = installer.secret_fingerprint("token-value")
+    assert fp1 == fp2
+    assert len(fp1) == 12
+    assert fp1 != "token-value"
+    assert installer.secret_fingerprint("") == "n/a"
+
+
 def test_render_secret_confirmation_hides_values() -> None:
     config = installer.InstallConfig(
         admin_api_token="admin-secret",
@@ -79,6 +88,7 @@ def test_render_secret_confirmation_hides_values() -> None:
     assert "vk-secret" not in rendered
     assert "SET (12 chars)" in rendered
     assert "SET (9 chars)" in rendered
+    assert "fingerprint:" in rendered
     assert "Подтверждение секретов" in rendered
 
 
@@ -150,6 +160,48 @@ def test_prompt_install_config_non_interactive_uses_json_config(tmp_path: Path) 
     assert config.admin_api_token
 
 
+def test_prompt_install_config_auto_generated_admin_one_time_reveal(monkeypatch, capsys) -> None:
+    inputs = iter(
+        [
+            "hidden",  # ADMIN mode
+            "",  # confirm one-time reveal
+            "hidden",  # VK mode
+            "42",  # VK_ALLOWED_PEERS
+            "file",  # PERSISTENCE_MODE
+            "openclaw",  # OPENCLAW_COMMAND
+        ]
+    )
+    secrets_input = iter(["", "vk-hidden-token"])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    monkeypatch.setattr(installer, "getpass", lambda _: next(secrets_input))
+    monkeypatch.setattr(installer.secrets, "token_hex", lambda n: "a" * 64)
+
+    config = installer.prompt_install_config(non_interactive=False, config_path=None, platform_name="linux")
+    output = capsys.readouterr().out
+
+    assert config.admin_api_token == "a" * 64
+    assert "ADMIN_API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in output
+    assert "shown once" in output
+
+
+def test_prompt_install_config_paste_visible_for_vk_token(monkeypatch) -> None:
+    inputs = iter(
+        [
+            "hidden",  # ADMIN mode
+            "paste-visible",  # VK mode
+            "vk-visible-token",  # VK token
+            "42",  # peers
+            "file",  # mode
+            "openclaw",  # openclaw command
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    monkeypatch.setattr(installer, "getpass", lambda _: "admin-token")
+
+    config = installer.prompt_install_config(non_interactive=False, config_path=None, platform_name="linux")
+    assert config.vk_access_token == "vk-visible-token"
+
+
 def test_run_setup_blocks_when_openclaw_missing(monkeypatch, capsys) -> None:
     monkeypatch.setattr(installer, "detect_platform", lambda: "linux")
     monkeypatch.setattr(installer, "check_systemd_user_available", lambda: (True, ""))
@@ -210,6 +262,7 @@ def test_run_setup_dry_run_skips_writes_and_service_install(monkeypatch, tmp_pat
     assert "Author: Гарипов Нияз Варисович февраль 2026" in output
     assert "- Email: garipovn@yandex.ru" in output
     assert "- License: MIT (`LICENSE`)" in output
+    assert "fingerprint:" in output
 
 
 def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -258,6 +311,8 @@ def test_run_setup_linux_non_interactive_writes_env_and_units(tmp_path: Path, mo
     assert "SET (8 chars)" in output
     assert "admin-token" not in output
     assert "vk-token" not in output
+    assert "fingerprint:" in output
+    assert "Where to find tokens later" in output
 
 
 def test_run_setup_windows_requires_winsw(monkeypatch, capsys) -> None:
