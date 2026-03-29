@@ -31,6 +31,15 @@ chmod +x ./install.sh
 ./install.sh
 ```
 
+Interactive setup now auto-selects:
+- `PERSISTENCE_MODE=file`
+- `OPENCLAW_COMMAND` from local wrapper or `openclaw`
+
+Use custom values only through non-interactive config:
+```bash
+vk-openclaw setup --non-interactive --config install.json
+```
+
 Windows one-command setup (PowerShell):
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1

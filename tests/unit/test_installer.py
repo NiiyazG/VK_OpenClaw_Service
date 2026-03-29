@@ -167,8 +167,6 @@ def test_prompt_install_config_auto_generated_admin_one_time_reveal(monkeypatch,
             "",  # confirm one-time reveal
             "hidden",  # VK mode
             "42",  # VK_ALLOWED_PEERS
-            "file",  # PERSISTENCE_MODE
-            "openclaw",  # OPENCLAW_COMMAND
         ]
     )
     secrets_input = iter(["", "vk-hidden-token"])
@@ -180,6 +178,10 @@ def test_prompt_install_config_auto_generated_admin_one_time_reveal(monkeypatch,
     output = capsys.readouterr().out
 
     assert config.admin_api_token == "a" * 64
+    assert config.persistence_mode == "file"
+    assert config.database_dsn == ""
+    assert config.redis_dsn == ""
+    assert config.openclaw_command == installer._default_openclaw_command()
     assert "ADMIN_API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in output
     assert "shown once" in output
 
@@ -191,8 +193,6 @@ def test_prompt_install_config_paste_visible_for_vk_token(monkeypatch) -> None:
             "paste-visible",  # VK mode
             "vk-visible-token",  # VK token
             "42",  # peers
-            "file",  # mode
-            "openclaw",  # openclaw command
         ]
     )
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -200,6 +200,8 @@ def test_prompt_install_config_paste_visible_for_vk_token(monkeypatch) -> None:
 
     config = installer.prompt_install_config(non_interactive=False, config_path=None, platform_name="linux")
     assert config.vk_access_token == "vk-visible-token"
+    assert config.persistence_mode == "file"
+    assert config.openclaw_command == installer._default_openclaw_command()
 
 
 def test_run_setup_blocks_when_openclaw_missing(monkeypatch, capsys) -> None:

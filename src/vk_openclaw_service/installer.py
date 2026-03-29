@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -271,7 +271,7 @@ def prompt_install_config(
     _print_bi(
         resolved_platform,
         "3) OPENCLAW_COMMAND (обычно openclaw или ./openclaw_agent_wrapper.sh)",
-        "3) OPENCLAW_COMMAND (usually openclaw or ./openclaw_agent_wrapper.sh)",
+        "3) Advanced runtime options are selected automatically.",
     )
     _print_bi(resolved_platform, "Документация: docs/vk_setup.md", "Docs: docs/vk_setup.md")
     _print_bi(
@@ -347,42 +347,21 @@ def prompt_install_config(
         source.get("VK_ALLOWED_PEERS", "42"),
     )
 
-    mode_default = _normalize_mode(source.get("PERSISTENCE_MODE", "file"))
     print()
     _print_bi(
         resolved_platform,
-        "Опции PERSISTENCE_MODE: file, memory, database.",
-        "PERSISTENCE_MODE options: file, memory, database.",
+        "PERSISTENCE_MODE автоматически: file.",
+        "PERSISTENCE_MODE is set automatically: file.",
     )
-    mode = _prompt_with_default(_bi(resolved_platform, "PERSISTENCE_MODE", "PERSISTENCE_MODE"), mode_default)
-    mode = _normalize_mode(mode)
-
+    _print_bi(
+        resolved_platform,
+        f"OPENCLAW_COMMAND автоматически: {_default_openclaw_command()}",
+        f"OPENCLAW_COMMAND is set automatically: {_default_openclaw_command()}",
+    )
+    mode = "file"
     database_dsn = ""
     redis_dsn = ""
-    if mode == "database":
-        _print_bi(
-            resolved_platform,
-            "Пример DATABASE_DSN: postgresql://user:pass@localhost:5432/dbname",
-            "DATABASE_DSN example: postgresql://user:pass@localhost:5432/dbname",
-        )
-        database_dsn = _prompt_non_empty(_bi(resolved_platform, "DATABASE_DSN: ", "DATABASE_DSN: "))
-        _print_bi(
-            resolved_platform,
-            "Пример REDIS_DSN: redis://localhost:6379/0",
-            "REDIS_DSN example: redis://localhost:6379/0",
-        )
-        redis_dsn = _prompt_non_empty(_bi(resolved_platform, "REDIS_DSN: ", "REDIS_DSN: "))
-
-    print()
-    _print_bi(
-        resolved_platform,
-        "OPENCLAW_COMMAND указывает на исполняемый файл OpenClaw или wrapper-скрипт.",
-        "OPENCLAW_COMMAND points to OpenClaw executable or wrapper script.",
-    )
-    openclaw_command = _prompt_with_default(
-        _bi(resolved_platform, "OPENCLAW_COMMAND", "OPENCLAW_COMMAND"),
-        _default_openclaw_command(),
-    )
+    openclaw_command = _default_openclaw_command()
 
     return InstallConfig(
         admin_api_token=admin_token,
@@ -962,3 +941,4 @@ def run_setup(*, non_interactive: bool, config_path: Path | None, dry_run: bool)
 def run_install(*, non_interactive: bool, config_path: Path | None) -> int:
     print("Notice: 'install' is deprecated. Use 'setup' for new flows.")
     return run_setup(non_interactive=non_interactive, config_path=config_path, dry_run=False)
+

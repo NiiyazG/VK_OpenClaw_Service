@@ -47,9 +47,14 @@ vk-openclaw setup
 - `ADMIN_API_TOKEN` (Enter for auto-generate)
 - `VK_ACCESS_TOKEN`
 - `VK_ALLOWED_PEERS`
-- `PERSISTENCE_MODE` (`file|memory|database`)
-- `DATABASE_DSN` and `REDIS_DSN` (only in `database` mode)
-- `OPENCLAW_COMMAND`
+- then applies defaults automatically:
+  - `PERSISTENCE_MODE=file`
+  - `OPENCLAW_COMMAND` resolved from local wrapper or `openclaw`
+
+Advanced mode selection is still available via non-interactive config:
+```bash
+vk-openclaw setup --non-interactive --config install.json
+```
 
 Linux wizard notes:
 - setup explanations are shown in RU/EN format (`RU / EN`)
