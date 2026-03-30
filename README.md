@@ -1,6 +1,12 @@
 # vk-openclaw-service
 
 ## What is it / Что это
+VK мессенджер + OpenClaw.
+
+Ещё один канал для OpenClaw в преддверии 1 апреля.
+
+VK - Сообщество - Управление - Работа с API - Ключ - Парринг с OpenClaw - VK мессенджер.
+
 `vk-openclaw-service` is an open-source bridge between VK Messenger and OpenClaw.
 The service receives VK messages, runs OpenClaw commands, sends results back to VK, and exposes admin API endpoints for health and audit.
 
