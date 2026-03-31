@@ -23,6 +23,7 @@ class VkApiError(Exception):
 
 
 RETRYABLE_API_CODES = {6, 9, 10}
+REJECT_API_CODES = {15}
 
 
 def _vk_error_code(error: Exception) -> int | None:
@@ -39,5 +40,7 @@ def classify_vk_send_failure(error: Exception) -> VkDeliveryOutcome:
     if vk_code is not None:
         if vk_code in RETRYABLE_API_CODES:
             return VkDeliveryOutcome.RETRY
+        if vk_code in REJECT_API_CODES:
+            return VkDeliveryOutcome.REJECT
         return VkDeliveryOutcome.REJECT
     return VkDeliveryOutcome.REJECT

@@ -5,7 +5,10 @@ import importlib
 from pathlib import Path
 from typing import Sequence
 
+from vk_openclaw_service.core.settings import get_settings
+from vk_openclaw_service.doctor import run_doctor
 from vk_openclaw_service import installer
+from vk_openclaw_service.launcher import start_all, status_all, stop_all
 from vk_openclaw_service.worker_main import main as worker_main
 
 
@@ -36,6 +39,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run_worker_parser.add_argument("--interval-seconds", type=float, default=None)
     run_worker_parser.add_argument("--retry-backoff-seconds", type=float, default=None)
     run_worker_parser.add_argument("--max-backoff-seconds", type=float, default=None)
+    run_all_parser = subparsers.add_parser("run-all", help="Run API + worker")
+    run_all_parser.add_argument("--wait-for-gateway", action="store_true")
+    subparsers.add_parser("stop-all", help="Stop API + worker from PID files")
+    subparsers.add_parser("doctor", help="Run environment diagnostics")
 
     return parser
 
@@ -75,6 +82,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "run-worker":
         return _run_worker_from_args(args)
+    if args.command == "run-all":
+        settings = get_settings(reload=True)
+        ok, message = start_all(settings, wait_for_gateway_enabled=bool(args.wait_for_gateway))
+        print(message)
+        if ok:
+            current = status_all(settings)
+            print(f"log: {current['log_file']}")
+            return 0
+        return 1
+    if args.command == "stop-all":
+        settings = get_settings(reload=True)
+        ok, message = stop_all(settings)
+        print(message)
+        return 0 if ok else 1
+    if args.command == "doctor":
+        return run_doctor()
 
     parser.error(f"Unknown command: {args.command}")
     return 2

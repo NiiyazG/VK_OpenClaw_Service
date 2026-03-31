@@ -9,7 +9,9 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from vk_openclaw_service.bootstrap.container import build_container
+from vk_openclaw_service.core.settings import get_settings
 from vk_openclaw_service.core.logging import get_worker_logger, log_event
+from vk_openclaw_service.health_check import check_vk_token
 from vk_openclaw_service.infra.vk.transport import VkDeliveryOutcome, classify_vk_send_failure
 from vk_openclaw_service.services.vk_runtime import LeaseLostError
 
@@ -167,7 +169,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
     logging.basicConfig(level=logging.INFO)
-    container = build_container()
+    settings = get_settings(reload=True)
+    preflight = check_vk_token(settings.vk_access_token)
+    if not preflight.ok:
+        raise SystemExit(f"Worker preflight failed: {preflight.message}")
+    container = build_container(settings)
     interval_seconds = args.interval_seconds or container.settings.worker_interval_sec
     retry_backoff_seconds = args.retry_backoff_seconds or container.settings.worker_retry_backoff_sec
     max_backoff_seconds = args.max_backoff_seconds or container.settings.worker_max_backoff_sec

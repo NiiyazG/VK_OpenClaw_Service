@@ -208,8 +208,10 @@ def test_main_runs_single_iteration_with_once_flag() -> None:
         build_container_mock.return_value.retry_drainer = fake_retry_drainer
         build_container_mock.return_value.worker_lease = fake_worker_lease
         build_container_mock.return_value.settings = RuntimeSettings()
-
-        exit_code = main(["--once", "--interval-seconds", "7"])
+        with patch("vk_openclaw_service.worker_main.check_vk_token") as preflight_mock:
+            preflight_mock.return_value.ok = True
+            preflight_mock.return_value.message = ""
+            exit_code = main(["--once", "--interval-seconds", "7"])
 
     assert exit_code == 0
     assert fake_runtime.calls == 1
@@ -233,8 +235,11 @@ def test_main_uses_runtime_settings_for_worker_loop_defaults(runtime_settings_fa
         build_container_mock.return_value.retry_drainer = fake_retry_drainer
         build_container_mock.return_value.worker_lease = fake_worker_lease
         build_container_mock.return_value.settings = settings
-        with patch("vk_openclaw_service.worker_main.run_worker_loop", return_value=4) as run_worker_loop_mock:
-            exit_code = main(["--once"])
+        with patch("vk_openclaw_service.worker_main.check_vk_token") as preflight_mock:
+            preflight_mock.return_value.ok = True
+            preflight_mock.return_value.message = ""
+            with patch("vk_openclaw_service.worker_main.run_worker_loop", return_value=4) as run_worker_loop_mock:
+                exit_code = main(["--once"])
 
     assert exit_code == 0
     run_worker_loop_mock.assert_called_once_with(
@@ -246,3 +251,15 @@ def test_main_uses_runtime_settings_for_worker_loop_defaults(runtime_settings_fa
         retry_backoff_seconds=1.5,
         max_backoff_seconds=25.0,
     )
+
+
+def test_main_fails_when_vk_token_preflight_fails() -> None:
+    with patch("vk_openclaw_service.worker_main.check_vk_token") as preflight_mock:
+        preflight_mock.return_value.ok = False
+        preflight_mock.return_value.message = "bad token"
+        try:
+            main(["--once"])
+        except SystemExit as exc:
+            assert "Worker preflight failed" in str(exc)
+        else:
+            raise AssertionError("expected SystemExit")

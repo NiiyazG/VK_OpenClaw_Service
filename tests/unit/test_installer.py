@@ -446,7 +446,7 @@ def test_run_setup_linux_without_systemd_uses_fallback_local(monkeypatch, tmp_pa
     assert calls["install"] == 0
     assert calls["manage"] == 0
     assert "fallback-local" in output
-    assert "set -a && source .env.local && set +a" in output
+    assert "vk-openclaw run-all --wait-for-gateway" in output
     assert "token required" in output.lower()
     env_text = (workdir / ".env.local").read_text(encoding="utf-8")
     assert "SERVICE_MODE=fallback-local" in env_text

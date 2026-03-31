@@ -1,4 +1,7 @@
-from vk_openclaw_service.core.settings import RuntimeSettings, load_settings_from_env
+from pathlib import Path
+
+from vk_openclaw_service.core import settings as settings_mod
+from vk_openclaw_service.core.settings import RuntimeSettings, get_settings, load_settings_from_env, reload_settings
 
 
 def test_load_settings_from_env_reads_overrides() -> None:
@@ -156,3 +159,26 @@ def test_load_settings_from_env_parses_free_text_flag() -> None:
     assert enabled.free_text_ask_enabled is True
     assert disabled.free_text_ask_enabled is False
     assert invalid.free_text_ask_enabled is False
+
+
+def test_get_settings_reloads_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("VK_ACCESS_TOKEN", "token-a")
+    first = get_settings(reload=True)
+    monkeypatch.setenv("VK_ACCESS_TOKEN", "token-b")
+    second = get_settings(reload=True)
+    assert first.vk_access_token == "token-a"
+    assert second.vk_access_token == "token-b"
+
+
+def test_reload_settings_attempts_to_load_dotenv(monkeypatch) -> None:
+    called = {"count": 0}
+
+    def fake_load_dotenv(*, dotenv_path: Path, override: bool) -> bool:
+        called["count"] += 1
+        assert str(dotenv_path).endswith(".env.local")
+        assert override is False
+        return True
+
+    monkeypatch.setattr(settings_mod, "load_dotenv", fake_load_dotenv)
+    reload_settings()
+    assert called["count"] == 1

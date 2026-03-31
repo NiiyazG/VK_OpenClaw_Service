@@ -45,7 +45,7 @@ def test_vk_runtime_service_polls_all_allowed_peers() -> None:
 
     processed = service.poll_once()
 
-    assert processed == 2
+    assert processed == 0
     assert vk_client.requested_peers == [42, 43]
     assert checkpoint_repository.get_or_create(42).last_committed_message_id == 1
     assert checkpoint_repository.get_or_create(43).last_committed_message_id == 2

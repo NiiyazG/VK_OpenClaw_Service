@@ -19,6 +19,9 @@ from urllib import error, request
 from urllib.parse import urlencode
 from urllib.parse import urlparse
 
+from vk_openclaw_service.core.settings import get_settings
+from vk_openclaw_service.launcher import build_launch_paths, start_all, status_all, stop_all
+
 SYSTEMD_UNIT_API = "vk-openclaw-api.service"
 SYSTEMD_UNIT_WORKER = "vk-openclaw-worker.service"
 WINDOWS_SERVICE_ID = "vk-openclaw-service"
@@ -636,10 +639,11 @@ def resolve_service_mode(*, working_directory: Path | None = None) -> str:
 
 
 def fallback_pid_paths(*, working_directory: Path) -> dict[str, Path]:
-    run_dir = working_directory / FALLBACK_RUN_DIR
+    del working_directory
+    paths = build_launch_paths(get_settings(reload=True))
     return {
-        "api": run_dir / FALLBACK_API_PID,
-        "worker": run_dir / FALLBACK_WORKER_PID,
+        "api": paths.api_pid,
+        "worker": paths.worker_pid,
     }
 
 
@@ -716,51 +720,24 @@ def _local_status_payload(*, env_values: dict[str, str], base_url: str) -> tuple
 
 
 def start_local_fallback_processes(*, working_directory: Path, env_path: Path, cli_executable: str) -> tuple[bool, str]:
-    env_values = load_env_file(env_path)
-    merged_env = dict(os.environ)
-    merged_env.update(env_values)
-    pid_paths = fallback_pid_paths(working_directory=working_directory)
-    for role, path in pid_paths.items():
-        pid = _read_pid(path)
-        if pid is not None and _is_pid_alive(pid):
-            return False, f"{role} process is already running (pid={pid})."
-        _remove_pid_file(path)
-
-    with Path(FALLBACK_API_LOG).open("ab") as api_log, Path(FALLBACK_WORKER_LOG).open("ab") as worker_log:
-        api_proc = subprocess.Popen(  # nosec B603
-            [cli_executable, "run-api", "--host", "127.0.0.1", "--port", "8000"],
-            cwd=str(working_directory),
-            env=merged_env,
-            stdout=api_log,
-            stderr=api_log,
-        )
-        worker_proc = subprocess.Popen(  # nosec B603
-            [cli_executable, "run-worker", "--interval-seconds", "5"],
-            cwd=str(working_directory),
-            env=merged_env,
-            stdout=worker_log,
-            stderr=worker_log,
-        )
-    _write_pid(pid_paths["api"], api_proc.pid)
-    _write_pid(pid_paths["worker"], worker_proc.pid)
-    time.sleep(0.8)
-    alive_api = _is_pid_alive(api_proc.pid)
-    alive_worker = _is_pid_alive(worker_proc.pid)
-    if alive_api and alive_worker:
-        return True, "fallback-local processes started."
-    return False, "fallback-local process start failed; inspect /tmp/vk_api.log and /tmp/vk_worker.log."
+    del working_directory, env_path, cli_executable
+    settings = get_settings(reload=True)
+    return start_all(settings)
 
 
 def status_local_fallback(*, working_directory: Path, env_path: Path) -> int:
+    del working_directory
     env_values = load_env_file(env_path)
-    pid_paths = fallback_pid_paths(working_directory=working_directory)
-    api_pid = _read_pid(pid_paths["api"])
-    worker_pid = _read_pid(pid_paths["worker"])
-    api_running = api_pid is not None and _is_pid_alive(api_pid)
-    worker_running = worker_pid is not None and _is_pid_alive(worker_pid)
+    settings = get_settings(reload=True)
+    current = status_all(settings)
+    api_pid = current["api_pid"]
+    worker_pid = current["worker_pid"]
+    api_running = bool(current["api_running"])
+    worker_running = bool(current["worker_running"])
     print("fallback-local status:")
     print(f"- api: {'running' if api_running else 'down'}" + (f" (pid={api_pid})" if api_pid else ""))
     print(f"- worker: {'running' if worker_running else 'down'}" + (f" (pid={worker_pid})" if worker_pid else ""))
+    print(f"- log: {current['log_file']}")
     base_url = os.environ.get(API_BASE_URL_ENV, DEFAULT_LOCAL_API_BASE_URL).strip() or DEFAULT_LOCAL_API_BASE_URL
     api_ok, api_details = _local_status_payload(env_values=env_values, base_url=base_url)
     if api_ok:
@@ -773,10 +750,10 @@ def status_local_fallback(*, working_directory: Path, env_path: Path) -> int:
 
 
 def stop_local_fallback(*, working_directory: Path) -> int:
-    pid_paths = fallback_pid_paths(working_directory=working_directory)
-    worker_ok = _stop_pid(pid_paths["worker"])
-    api_ok = _stop_pid(pid_paths["api"])
-    if worker_ok and api_ok:
+    del working_directory
+    settings = get_settings(reload=True)
+    ok, _ = stop_all(settings)
+    if ok:
         print("fallback-local processes stopped.")
         return 0
     print("fallback-local stop warning: some processes are still alive.")
@@ -1163,9 +1140,9 @@ def render_local_fallback_commands(*, working_directory: Path) -> list[str]:
         f"cd {wd}",
         "source .venv/bin/activate",
         "set -a && source .env.local && set +a",
-        "nohup ./.venv/bin/vk-openclaw run-api --host 127.0.0.1 --port 8000 >/tmp/vk_api.log 2>&1 &",
-        "nohup ./.venv/bin/vk-openclaw run-worker --interval-seconds 5 >/tmp/vk_worker.log 2>&1 &",
-        "tail -n 60 /tmp/vk_worker.log",
+        "vk-openclaw run-all --wait-for-gateway",
+        "vk-openclaw status",
+        "tail -n 60 ./state/vk-openclaw.log",
     ]
 
 

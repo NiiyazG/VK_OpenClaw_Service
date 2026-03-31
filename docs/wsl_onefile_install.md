@@ -1,34 +1,67 @@
 # WSL One-File Install Guide
 
-## Build (inside WSL Ubuntu 22.04/24.04)
+## Build in WSL
+
 ```bash
 python -m pip install .[build]
 python scripts/build_onefile_linux.py
 ```
 
-Artifacts are written to `.dist_verify/`:
-- `vk-openclaw`
-- `vk-openclaw.sha256`
-- `vk-openclaw-install-guide.md`
+Artifacts are generated in `.dist_verify/`.
 
-## Install and Configure
+## Install
+
 ```bash
 chmod +x ./vk-openclaw
-./vk-openclaw install
+./vk-openclaw setup
 ```
 
-The installer will:
-- check WSL/systemd/openclaw prerequisites
-- ask for tokens and runtime parameters (RU prompts)
-- write `.env.local` with `chmod 600`
-- create user units:
-  - `~/.config/systemd/user/vk-openclaw-api.service`
-  - `~/.config/systemd/user/vk-openclaw-worker.service`
+Setup writes `.env.local` and detects service mode (`system-service` or `fallback-local`).
 
-## Runtime control
+## Runtime Commands
+
 ```bash
-./vk-openclaw start
-./vk-openclaw status
-./vk-openclaw stop
+./vk-openclaw run-all --wait-for-gateway
+./vk-openclaw stop-all
+./vk-openclaw doctor
 ```
 
+## WSL2 Autostart
+
+### Option A: `autostart.sh` + cron
+
+```bash
+chmod +x scripts/autostart.sh
+crontab -e
+```
+
+Add:
+
+```cron
+@reboot cd /path/to/VK_OpenClaw_Service && ./scripts/autostart.sh start
+```
+
+### Option B: `/etc/wsl.conf` boot command
+
+```ini
+[boot]
+command=/bin/bash -lc 'cd /path/to/VK_OpenClaw_Service && ./scripts/autostart.sh start'
+```
+
+Apply config:
+
+```powershell
+wsl --shutdown
+```
+
+## Diagnostics
+
+```bash
+./vk-openclaw doctor
+tail -n 200 state/vk-openclaw.log
+```
+
+If `doctor` fails:
+- check `.env.local` values (`VK_ACCESS_TOKEN`, `VK_ALLOWED_PEERS`);
+- ensure gateway is reachable on `127.0.0.1:18789`;
+- ensure port `8000` is free.

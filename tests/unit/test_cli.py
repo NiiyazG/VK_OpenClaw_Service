@@ -5,6 +5,7 @@ import types
 from unittest.mock import patch
 
 from vk_openclaw_service.cli import main
+from vk_openclaw_service.core.settings import RuntimeSettings
 
 
 def test_cli_setup_dispatches_to_installer() -> None:
@@ -81,3 +82,29 @@ def test_cli_run_api_calls_uvicorn(monkeypatch) -> None:
 
     assert exit_code == 0
     assert called == [("vk_openclaw_service.main:app", "0.0.0.0", 9000)]
+
+
+def test_cli_run_all_dispatches_to_launcher() -> None:
+    settings = RuntimeSettings(vk_access_token="token")
+    with patch("vk_openclaw_service.cli.get_settings", return_value=settings):
+        with patch("vk_openclaw_service.cli.start_all", return_value=(True, "started")) as start_all_mock:
+            with patch("vk_openclaw_service.cli.status_all", return_value={"log_file": "./state/vk-openclaw.log"}):
+                exit_code = main(["run-all", "--wait-for-gateway"])
+    assert exit_code == 0
+    start_all_mock.assert_called_once_with(settings, wait_for_gateway_enabled=True)
+
+
+def test_cli_stop_all_dispatches_to_launcher() -> None:
+    settings = RuntimeSettings(vk_access_token="token")
+    with patch("vk_openclaw_service.cli.get_settings", return_value=settings):
+        with patch("vk_openclaw_service.cli.stop_all", return_value=(True, "stopped")) as stop_all_mock:
+            exit_code = main(["stop-all"])
+    assert exit_code == 0
+    stop_all_mock.assert_called_once_with(settings)
+
+
+def test_cli_doctor_dispatches_to_doctor() -> None:
+    with patch("vk_openclaw_service.cli.run_doctor", return_value=0) as doctor_mock:
+        exit_code = main(["doctor"])
+    assert exit_code == 0
+    doctor_mock.assert_called_once()

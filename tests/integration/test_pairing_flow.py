@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from vk_openclaw_service.core.settings import RuntimeSettings
 from vk_openclaw_service.main import create_app
 
 
@@ -36,3 +37,28 @@ def test_pairing_flow_updates_shared_repository_state() -> None:
         "pairing_code_created",
         "pairing_verified",
     ]
+
+
+def test_pairing_persists_across_app_restart(tmp_path) -> None:
+    settings = RuntimeSettings(
+        admin_api_token="admin-token",
+        vk_access_token="vk-token",
+        allowed_peers=frozenset({42}),
+        persistence_mode="file",
+        state_dir=str(tmp_path / "state"),
+    )
+    app1 = create_app(settings=settings)
+    client1 = TestClient(app1)
+    code_response = client1.post(
+        "/api/v1/pairing/code",
+        json={"peer_id": 42},
+        headers={"Authorization": "Bearer admin-token"},
+    )
+    code = code_response.json()["code"]
+    verify_response = client1.post("/api/v1/pairing/verify", json={"peer_id": 42, "code": code})
+    assert verify_response.status_code == 200
+
+    app2 = create_app(settings=settings)
+    repository = app2.state.container.pairing_repository
+    assert repository.is_paired(42) is True
+    assert 42 in repository.list_paired_peers()

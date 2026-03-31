@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
+from pathlib import Path
 from typing import AbstractSet
+
+_LOGGER = logging.getLogger(__name__)
+_DOTENV_LOADED = False
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - tested via monkeypatch
+    load_dotenv = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -134,8 +144,37 @@ def _parse_bool(raw: str | None, default: bool) -> bool:
     return default
 
 
-_settings = load_settings_from_env()
+def _project_env_local_path() -> Path:
+    return Path(__file__).parent.parent.parent.parent / ".env.local"
 
 
-def get_settings() -> RuntimeSettings:
+def _ensure_env_loaded() -> None:
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    env_path = _project_env_local_path()
+    if load_dotenv is None:
+        if env_path.exists():
+            _LOGGER.warning("python-dotenv is not installed; .env.local was not auto-loaded")
+        _DOTENV_LOADED = True
+        return
+    load_dotenv(dotenv_path=env_path, override=False)
+    _DOTENV_LOADED = True
+
+
+_settings: RuntimeSettings | None = None
+
+
+def reload_settings() -> RuntimeSettings:
+    global _settings, _DOTENV_LOADED
+    _DOTENV_LOADED = False
+    _ensure_env_loaded()
+    _settings = load_settings_from_env()
+    return _settings
+
+
+def get_settings(reload: bool = False) -> RuntimeSettings:
+    global _settings
+    if reload or _settings is None:
+        return reload_settings()
     return _settings
