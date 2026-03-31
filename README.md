@@ -40,6 +40,24 @@ Stop all local processes:
 vk-openclaw stop-all
 ```
 
+## How to Get VK_ACCESS_TOKEN / Как получить VK_ACCESS_TOKEN
+
+VK community path:
+- `VK` -> `Сообщество` -> `Управление` -> `Работа с API` -> `Создать ключ`
+- Copy this key and put it into `.env.local` as `VK_ACCESS_TOKEN=...`
+
+Путь в VK:
+- `VK` -> `Сообщество` -> `Управление` -> `Работа с API` -> `Создать ключ`
+- Скопируйте ключ и вставьте в `.env.local` как `VK_ACCESS_TOKEN=...`
+
+Visual steps:
+
+![Setup wizard step 1](pic/setup-wizard-01.png)
+
+![Setup wizard step 2](pic/setup-wizard-02.png)
+
+![Fallback local run](pic/fallback-run-01.png)
+
 ## Commands / Команды
 
 Main commands:
